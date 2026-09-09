@@ -101,12 +101,13 @@ are detected in `app.js` and surfaced as a banner rather than blending into the 
 
 `_attach_airtable()` runs after every successful generation on both routes. It
 calls `save_to_airtable()` (one `POST .../v0/{base}/{table}` with `typecast: true`)
-mapping to hard-coded field names in the owner's "Main Database" table: `Video URL`,
-`Original Transcript`, `Body Script`, `Script Status`=`Done`, `Script Completed At`,
-`Video Type`=`Short Form`, and `Source Account` best-effort from the `@handle`
-(`_SOURCE_ACCOUNT_MAP`). Best-effort: a failure is attached to the JSON as
-`airtable: {ok, detail}` for a small UI note and never raises. If the destination
-table changes, update the field names in `save_to_airtable()`.
+writing hard-coded field names + values in the owner's "Main Database" table:
+`Status`=`Script Complete`, `Script Status`=`Done`, `Source Account`=`MCAT Simplified`,
+`Video Type`=`Long & Short Form`, `Original Transcript`, `Body Script`, and
+`Video URL` (only when a link was used). Timing fields are deliberately left alone.
+Best-effort: a failure is attached to the JSON as `airtable: {ok, detail}` for a
+small UI note and never raises. If the destination table or the desired
+values/fields change, edit `save_to_airtable()`.
 
 ## Gemini model ids
 

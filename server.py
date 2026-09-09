@@ -8,7 +8,6 @@ Then open http://localhost:3000   (Ctrl+C to stop)
 """
 
 import base64
-import datetime
 import glob
 import hmac
 import json
@@ -333,39 +332,25 @@ def transcribe_link(url):
 
 # ---- Airtable (best-effort: a failure here never blocks the script) ---------
 
-_SOURCE_ACCOUNT_MAP = [
-    ("mcat_simplified", "MCAT Simplified"),
-    ("mcatsimplified", "MCAT Simplified"),
-    ("medschoolcoach", "MedSchoolCoach MCAT Prep"),
-]
-
-
-def _source_account(link):
-    low = (link or "").lower()
-    for needle, label in _SOURCE_ACCOUNT_MAP:
-        if needle in low:
-            return label
-    return None
-
-
 def save_to_airtable(link, transcript, script):
-    """Create one row. Returns None (not configured), or (ok: bool, detail: str)."""
+    """Create one row. Returns None (not configured), or (ok: bool, detail: str).
+
+    Timing fields (Script Started/Completed At, Script Creation Time) are left
+    for the team to manage; this only fills content + status.
+    """
     if not (AIRTABLE_API_KEY and AIRTABLE_BASE_ID and AIRTABLE_TABLE):
         return None
 
     fields = {
+        "Status": "Script Complete",
+        "Script Status": "Done",
+        "Source Account": "MCAT Simplified",
+        "Video Type": "Long & Short Form",
         "Original Transcript": transcript,
         "Body Script": script,
-        "Script Status": "Done",
-        "Script Completed At": datetime.datetime.now(datetime.timezone.utc)
-        .strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-        "Video Type": "Short Form",
     }
     if link:
         fields["Video URL"] = link
-    src = _source_account(link)
-    if src:
-        fields["Source Account"] = src
 
     url = "https://api.airtable.com/v0/%s/%s" % (
         AIRTABLE_BASE_ID,
