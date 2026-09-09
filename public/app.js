@@ -22,6 +22,7 @@ const els = {
   generateBtn: document.getElementById("generate-btn"),
   status: document.getElementById("status"),
   copyBtn: document.getElementById("copy-btn"),
+  airtableNote: document.getElementById("airtable-note"),
   banner: document.getElementById("banner"),
   output: document.getElementById("output"),
   historyList: document.getElementById("history-list"),
@@ -189,6 +190,7 @@ async function generate() {
     }
 
     showScript(data.script, data.truncated);
+    showAirtableNote(data.airtable);
     saveToHistory({
       id: String(Date.now()),
       ts: Date.now(),
@@ -211,6 +213,18 @@ function setBusy(busy, msg) {
 
 function updateTranscriptCopy() {
   els.copyTranscriptBtn.hidden = !els.transcript.value.trim();
+}
+
+function showAirtableNote(info) {
+  if (!info) {
+    els.airtableNote.hidden = true;
+    return;
+  }
+  els.airtableNote.hidden = false;
+  els.airtableNote.textContent = info.ok
+    ? "✓ Saved to Airtable"
+    : "⚠ Airtable: " + (info.detail || "not saved");
+  els.airtableNote.classList.toggle("err", !info.ok);
 }
 
 els.transcript.addEventListener("input", updateTranscriptCopy);
@@ -242,6 +256,7 @@ async function generateFromLink() {
     els.transcript.value = data.transcript || "";
     updateTranscriptCopy();
     showScript(data.script, data.truncated);
+    showAirtableNote(data.airtable);
     saveToHistory({
       id: String(Date.now()),
       ts: Date.now(),
@@ -322,6 +337,7 @@ els.newBtn.addEventListener("click", () => {
   updateTranscriptCopy();
   clearImage();
   showBanner("", null);
+  showAirtableNote(null);
   els.copyBtn.hidden = true;
   els.output.innerHTML = '<p class="placeholder">The generated script will appear here.</p>';
   renderHistory();
@@ -370,6 +386,7 @@ function openHistory(id) {
   updateTranscriptCopy();
   clearImage();
   showScript(item.script, false);
+  showAirtableNote(null);
   renderHistory();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }

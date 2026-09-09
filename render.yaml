@@ -20,3 +20,9 @@ services:
         sync: false   # the password people type to use the site
       - key: ELEVENLABS_API_KEY
         sync: false   # optional: enables the "paste a TikTok link" flow
+      - key: AIRTABLE_API_KEY
+        sync: false   # optional: log every script to Airtable (needs all 3)
+      - key: AIRTABLE_BASE_ID
+        sync: false
+      - key: AIRTABLE_TABLE
+        sync: false

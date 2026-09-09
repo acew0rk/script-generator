@@ -301,6 +301,22 @@ button.primary:disabled {
   justify-content: space-between;
 }
 
+.output-head-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.airtable-note {
+  font-size: 12px;
+  font-weight: 550;
+  color: #1a7f4b;
+}
+
+.airtable-note.err {
+  color: var(--warn-text);
+}
+
 /* transcript header sits right on top of the box */
 .output-head.tight {
   margin-bottom: 4px;

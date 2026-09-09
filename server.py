@@ -8,6 +8,7 @@ Then open http://localhost:3000   (Ctrl+C to stop)
 """
 
 import base64
+import datetime
 import glob
 import hmac
 import json
@@ -19,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -66,6 +68,11 @@ APP_PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "").strip()
 ELEVENLABS_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text"
 ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL", "scribe_v1")
+# Optional. When all three are set, every generated script also creates a row in
+# this Airtable table (best-effort -- a failure never blocks the script).
+AIRTABLE_API_KEY = os.environ.get("AIRTABLE_API_KEY", "").strip()
+AIRTABLE_BASE_ID = os.environ.get("AIRTABLE_BASE_ID", "").strip()
+AIRTABLE_TABLE = os.environ.get("AIRTABLE_TABLE", "").strip()  # table id or name
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" % MODEL
 )
@@ -324,6 +331,71 @@ def transcribe_link(url):
     return text
 
 
+# ---- Airtable (best-effort: a failure here never blocks the script) ---------
+
+_SOURCE_ACCOUNT_MAP = [
+    ("mcat_simplified", "MCAT Simplified"),
+    ("mcatsimplified", "MCAT Simplified"),
+    ("medschoolcoach", "MedSchoolCoach MCAT Prep"),
+]
+
+
+def _source_account(link):
+    low = (link or "").lower()
+    for needle, label in _SOURCE_ACCOUNT_MAP:
+        if needle in low:
+            return label
+    return None
+
+
+def save_to_airtable(link, transcript, script):
+    """Create one row. Returns None (not configured), or (ok: bool, detail: str)."""
+    if not (AIRTABLE_API_KEY and AIRTABLE_BASE_ID and AIRTABLE_TABLE):
+        return None
+
+    fields = {
+        "Original Transcript": transcript,
+        "Body Script": script,
+        "Script Status": "Done",
+        "Script Completed At": datetime.datetime.now(datetime.timezone.utc)
+        .strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "Video Type": "Short Form",
+    }
+    if link:
+        fields["Video URL"] = link
+    src = _source_account(link)
+    if src:
+        fields["Source Account"] = src
+
+    url = "https://api.airtable.com/v0/%s/%s" % (
+        AIRTABLE_BASE_ID,
+        urllib.parse.quote(AIRTABLE_TABLE, safe=""),
+    )
+    req = urllib.request.Request(
+        url,
+        data=json.dumps({"fields": fields, "typecast": True}).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": "Bearer " + AIRTABLE_API_KEY,
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            rec = json.loads(resp.read().decode("utf-8"))
+        return (True, rec.get("id", ""))
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            err = json.loads(exc.read().decode("utf-8")).get("error", {})
+            detail = err.get("message") or err.get("type") or "" if isinstance(err, dict) else str(err)
+        except Exception:
+            pass
+        return (False, "Airtable %s%s" % (exc.code, ": " + detail if detail else ""))
+    except Exception as exc:  # noqa: BLE001
+        return (False, _short(exc))
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MCATScriptGen/3.0"
     protocol_version = "HTTP/1.1"
@@ -441,12 +513,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "Invalid image payload."})
             return
 
+        transcript = transcript.strip()
         try:
-            result = call_gemini(transcript.strip(), image)
+            result = call_gemini(transcript, image)
         except Exception as exc:  # noqa: BLE001
             self._fail(exc)
             return
 
+        _attach_airtable(result, None, transcript, result["script"])
         self._send_json(200, result)
 
     def _handle_from_link(self):
@@ -458,16 +532,28 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(link, str) or not link.strip():
             self._send_json(400, {"error": "Paste a link first."})
             return
+        link = link.strip()
 
         try:
-            transcript = transcribe_link(link.strip())
+            transcript = transcribe_link(link)
             result = call_gemini(transcript, None)
         except Exception as exc:  # noqa: BLE001
             self._fail(exc)
             return
 
         result["transcript"] = transcript
+        _attach_airtable(result, link, transcript, result["script"])
         self._send_json(200, result)
+
+
+def _attach_airtable(result, link, transcript, script):
+    outcome = save_to_airtable(link, transcript, script)
+    if outcome is None:
+        return
+    ok, detail = outcome
+    result["airtable"] = {"ok": ok, "detail": detail}
+    if not ok:
+        sys.stderr.write("Airtable write failed: %s\n" % detail)
 
 
 def main():
@@ -482,6 +568,7 @@ def main():
     print("MCAT script generator running at %s" % where)
     print("Model: %s" % MODEL)
     print("Password gate: %s" % ("ON" if APP_PASSWORD else "off"))
+    print("Airtable: %s" % ("ON" if (AIRTABLE_API_KEY and AIRTABLE_BASE_ID and AIRTABLE_TABLE) else "off"))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
