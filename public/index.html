@@ -17,78 +17,51 @@
       <aside class="sidebar">
         <div class="sidebar-head">
           <h1>Link to Scripts</h1>
-          <button id="new-btn" type="button" title="Start a new script">+ New</button>
+          <button id="new-btn" type="button" title="Clear the list">Clear</button>
         </div>
         <ul id="history-list" class="history-list"></ul>
-        <p id="history-empty" class="history-empty">No saved scripts yet.</p>
+        <p id="history-empty" class="history-empty">Nothing generated yet.</p>
       </aside>
 
       <main class="main">
         <section class="panel">
-          <label class="field-label" for="link">From TikTok link(s)</label>
+          <label class="field-label" for="link">TikTok link(s)</label>
           <textarea
             id="link"
             class="link-input"
-            rows="3"
+            rows="4"
             placeholder="One TikTok link per line — paste as many as you want"
             spellcheck="false"
           ></textarea>
           <div class="link-row">
-            <button id="link-btn" type="button" class="primary">Get script(s)</button>
+            <button id="link-btn" type="button" class="primary">Generate</button>
             <span id="link-status" class="status" role="status" aria-live="polite"></span>
           </div>
           <p class="hint">
-            Each link: downloads the video, transcribes it with ElevenLabs, writes the
-            script, saves a row to Airtable. They run one at a time. The last one lands in
-            the boxes below — click any finished item in the list to load it there.
+            Each link: downloads the video, transcribes it, writes the script, and adds a
+            row to Airtable (Original Transcript + Body Script). They run one at a time —
+            open Airtable to review the results.
           </p>
           <ul id="batch-progress" class="batch-progress" hidden></ul>
         </section>
 
-        <section class="panel">
-          <div class="output-head tight">
-            <label class="field-label" for="transcript">Transcript</label>
-            <button id="copy-transcript-btn" type="button" hidden>Copy</button>
-          </div>
+        <details class="panel fallback">
+          <summary>A download failed? Paste that transcript instead</summary>
           <textarea
             id="transcript"
-            class="transcript"
-            placeholder="Paste the video transcript here…"
+            class="link-input"
+            rows="6"
+            placeholder="Paste a transcript here (e.g. from transcript365)…"
             spellcheck="false"
           ></textarea>
-
-          <div class="attach">
-            <div id="dropzone" class="dropzone" tabindex="0">
-              <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
-              <span id="dropzone-text">
-                Optional: attach or paste a screenshot of the question &amp; answer choices
-              </span>
-              <div id="image-preview" class="image-preview" hidden>
-                <img id="image-thumb" alt="attached screenshot preview" />
-                <button id="image-remove" type="button" title="Remove image">Remove</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button id="generate-btn" type="button" class="primary">Generate script</button>
+          <div class="link-row">
+            <button id="generate-btn" type="button" class="primary">Generate from transcript</button>
             <span id="status" class="status" role="status" aria-live="polite"></span>
           </div>
-        </section>
-
-        <section class="panel output-panel">
-          <div class="output-head">
-            <div class="output-head-left">
-              <label class="field-label">Script</label>
-              <span id="airtable-note" class="airtable-note" hidden></span>
-            </div>
-            <button id="copy-btn" type="button" hidden>Copy</button>
-          </div>
-          <div id="banner" class="banner" hidden></div>
-          <article id="output" class="output">
-            <p class="placeholder">The generated script will appear here.</p>
-          </article>
-        </section>
+          <p class="hint">
+            No TikTok link is recorded for these, so the Video URL field stays blank.
+          </p>
+        </details>
       </main>
     </div>
 

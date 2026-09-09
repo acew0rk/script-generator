@@ -80,11 +80,14 @@ body {
 .history-item {
   padding: 10px 12px;
   border-radius: 8px;
-  cursor: pointer;
   border: 1px solid transparent;
 }
 
-.history-item:hover {
+.history-item.linked {
+  cursor: pointer;
+}
+
+.history-item.linked:hover {
   background: var(--bg);
 }
 
@@ -260,6 +263,48 @@ body {
 
 .batch-row.err .batch-state {
   color: var(--error-text);
+}
+
+.batch-row.warn .batch-state {
+  color: var(--warn-text);
+}
+
+.batch-state a {
+  color: inherit;
+}
+
+/* Fallback (paste a transcript) */
+details.fallback {
+  padding: 0;
+}
+
+details.fallback > summary {
+  padding: 14px 18px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  list-style: none;
+}
+
+details.fallback > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.fallback > summary::before {
+  content: "▸ ";
+}
+
+details.fallback[open] > summary::before {
+  content: "▾ ";
+}
+
+details.fallback > *:not(summary) {
+  margin: 0 18px 14px;
+}
+
+details.fallback > .link-row {
+  margin-top: 10px;
 }
 
 .hint {

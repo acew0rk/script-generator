@@ -559,7 +559,7 @@ class Handler(BaseHTTPRequestHandler):
             self._fail(exc)
             return
 
-        _attach_airtable(result, None, transcript, result["script"])
+        _finish(result, None, transcript)
         self._send_json(200, result)
 
     def _handle_from_link(self):
@@ -581,16 +581,36 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         result["transcript"] = transcript
-        _attach_airtable(result, link, transcript, result["script"])
+        _finish(result, link, transcript)
         self._send_json(200, result)
 
 
-def _attach_airtable(result, link, transcript, script):
+SIGNAL_PHRASES = (
+    "I NEED THE QUESTIONS AND ANSWER CHOICES",
+    "DO NOT ADD THIS TO THE DATABASE",
+)
+
+
+def _finish(result, link, transcript):
+    """Post-generation: flag signal phrases (and skip Airtable), else write the row."""
+    script = result.get("script", "")
+    for phrase in SIGNAL_PHRASES:
+        if phrase in script:
+            result["signal"] = phrase
+            return
+
     outcome = save_to_airtable(link, transcript, script)
     if outcome is None:
         return
     ok, detail = outcome
-    result["airtable"] = {"ok": ok, "detail": detail}
+    entry = {"ok": ok, "detail": detail}
+    if ok and detail and AIRTABLE_BASE_ID and AIRTABLE_TABLE:
+        entry["url"] = "https://airtable.com/%s/%s/%s" % (
+            AIRTABLE_BASE_ID,
+            AIRTABLE_TABLE,
+            detail,
+        )
+    result["airtable"] = entry
     if not ok:
         sys.stderr.write("Airtable write failed: %s\n" % detail)
 

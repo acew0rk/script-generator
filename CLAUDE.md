@@ -82,11 +82,15 @@ Three moving parts, each in one file:
   `systemInstruction`. This is the owner's own prompt, verbatim, minus its
   chat-style handshake. **Edit the prompt here.** It is imported *after*
   `load_dotenv()` on purpose.
-- **`public/`** — vanilla HTML/CSS/JS, no framework, no bundler. `app.js`
-  contains a deliberately tiny hand-rolled Markdown renderer (headings, bold,
-  italic, lists only — the model's output format is known and narrow) and all
-  history logic. **History is 100% client-side** in `localStorage` under
-  `mcat-scripts-history`; the server never sees or stores it.
+- **`public/`** — vanilla HTML/CSS/JS, no framework, no bundler. The UI is
+  **link-first and output-light**: a textarea for TikTok link(s) → `app.js` loops
+  `/api/from-link` sequentially and renders a per-link results list, each `✓` row
+  linking straight to the new Airtable record. The generated transcript/script are
+  **not shown on the page** — they live in Airtable. A collapsed `<details>` holds
+  a paste-a-transcript fallback (`/api/generate`) for when a download fails.
+  The sidebar is a **client-side log** in `localStorage` (`mcat-scripts-history`):
+  title + status, click-through to Airtable when a row was saved. It keeps the
+  full script/transcript as a local backup but never displays them.
 
 ### Auth model
 
@@ -101,23 +105,24 @@ The prompt tells the model not to emit a "Short Video Script" title; `call_gemin
 LaTeX / math notation because the script is read aloud; `_strip_latex()` is the
 backstop — it only fires when the text actually contains markup and converts the
 common tokens (`\times`, `^{-9}`, `$...$`, …) to spoken words, leaving plain "$5"
-money alone. Two "signal phrases" from the prompt (`I NEED THE QUESTIONS AND
-ANSWER CHOICES`, `DO NOT ADD THIS TO THE DATABASE`) are detected in `app.js` and
-surfaced as a banner rather than blending into the script.
+money alone.
 
 `call_gemini()` retries 429/5xx up to 4 times (3s/6s/9s) — the free tier throttles.
 
-### Airtable logging
+### `_finish()` — signal phrases + Airtable
 
-`_attach_airtable()` runs after every successful generation on both routes. It
-calls `save_to_airtable()` (one `POST .../v0/{base}/{table}` with `typecast: true`)
+Runs after every successful generation on both routes. If the script contains a
+"signal phrase" from the prompt (`I NEED THE QUESTIONS AND ANSWER CHOICES`,
+`DO NOT ADD THIS TO THE DATABASE`) it sets `result["signal"]` and **skips Airtable**
+— those aren't real scripts and must not land in the database. Otherwise it calls
+`save_to_airtable()` (one `POST .../v0/{base}/{table}` with `typecast: true`)
 writing hard-coded field names + values in the owner's "Main Database" table:
 `Status`=`Script Complete`, `Script Status`=`Done`, `Source Account`=`MCAT Simplified`,
 `Video Type`=`Long & Short Form`, `Original Transcript`, `Body Script`, and
 `Video URL` (only when a link was used). Timing fields are deliberately left alone.
-Best-effort: a failure is attached to the JSON as `airtable: {ok, detail}` for a
-small UI note and never raises. If the destination table or the desired
-values/fields change, edit `save_to_airtable()`.
+The result carries `airtable: {ok, detail, url}` (url = the record's Airtable page).
+Best-effort: a failure is reported in that object and never raises. To change the
+destination or the field values, edit `save_to_airtable()`.
 
 ## Gemini model ids
 
