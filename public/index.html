@@ -47,20 +47,22 @@
 
         <details class="panel fallback">
           <summary>A download failed? Paste that transcript instead</summary>
-          <textarea
-            id="transcript"
-            class="link-input"
-            rows="6"
-            placeholder="Paste a transcript here (e.g. from transcript365)…"
-            spellcheck="false"
-          ></textarea>
-          <div class="link-row">
-            <button id="generate-btn" type="button" class="primary">Generate from transcript</button>
-            <span id="status" class="status" role="status" aria-live="polite"></span>
+          <div class="fallback-body">
+            <textarea
+              id="transcript"
+              class="link-input"
+              rows="6"
+              placeholder="Paste a transcript here (e.g. from transcript365)…"
+              spellcheck="false"
+            ></textarea>
+            <div class="link-row">
+              <button id="generate-btn" type="button" class="primary">Generate from transcript</button>
+              <span id="status" class="status" role="status" aria-live="polite"></span>
+            </div>
+            <p class="hint">
+              No TikTok link is recorded for these, so the Video URL field stays blank.
+            </p>
           </div>
-          <p class="hint">
-            No TikTok link is recorded for these, so the Video URL field stays blank.
-          </p>
         </details>
       </main>
     </div>

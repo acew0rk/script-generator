@@ -299,11 +299,15 @@ details.fallback[open] > summary::before {
   content: "▾ ";
 }
 
-details.fallback > *:not(summary) {
-  margin: 0 18px 14px;
+.fallback-body {
+  padding: 0 18px 16px;
 }
 
-details.fallback > .link-row {
+.fallback-body .link-row {
+  margin-top: 10px;
+}
+
+.fallback-body .hint {
   margin-top: 10px;
 }
 
