@@ -27,7 +27,14 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.5 "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+}
+
+/* Lato is the reading font for transcript + script text */
+:root {
+  --reading-font: "Lato", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
 }
 
 .app {
@@ -57,8 +64,9 @@ body {
 
 .sidebar-head h1 {
   margin: 0;
+  font-family: "Poppins", sans-serif;
   font-size: 16px;
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .history-list {
@@ -154,7 +162,9 @@ body {
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--reading-font);
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--text);
   background: #fcfcfd;
 }
@@ -291,6 +301,19 @@ button.primary:disabled {
   justify-content: space-between;
 }
 
+/* transcript header sits right on top of the box */
+.output-head.tight {
+  margin-bottom: 4px;
+}
+
+.output-head.tight .field-label {
+  margin-bottom: 0;
+}
+
+#copy-transcript-btn {
+  margin-bottom: 4px;
+}
+
 .banner {
   margin-bottom: 14px;
   padding: 10px 14px;
@@ -309,6 +332,7 @@ button.primary:disabled {
 }
 
 .output {
+  font-family: var(--reading-font);
   font-size: 15px;
   line-height: 1.7;
 }

@@ -209,6 +209,12 @@ function setBusy(busy, msg) {
   els.status.textContent = busy ? msg || "Generating…" : "";
 }
 
+function updateTranscriptCopy() {
+  els.copyTranscriptBtn.hidden = !els.transcript.value.trim();
+}
+
+els.transcript.addEventListener("input", updateTranscriptCopy);
+
 async function generateFromLink() {
   const link = els.link.value.trim();
   if (!link) {
@@ -234,6 +240,7 @@ async function generateFromLink() {
     }
 
     els.transcript.value = data.transcript || "";
+    updateTranscriptCopy();
     showScript(data.script, data.truncated);
     saveToHistory({
       id: String(Date.now()),
@@ -312,6 +319,7 @@ els.newBtn.addEventListener("click", () => {
   els.link.value = "";
   els.linkStatus.textContent = "";
   els.transcript.value = "";
+  updateTranscriptCopy();
   clearImage();
   showBanner("", null);
   els.copyBtn.hidden = true;
@@ -358,7 +366,8 @@ function openHistory(id) {
   const item = loadHistory().find((it) => it.id === id);
   if (!item) return;
   activeId = id;
-  els.transcript.value = item.transcript;
+  els.transcript.value = item.transcript || "";
+  updateTranscriptCopy();
   clearImage();
   showScript(item.script, false);
   renderHistory();
@@ -412,3 +421,4 @@ function renderHistory() {
 }
 
 renderHistory();
+updateTranscriptCopy();

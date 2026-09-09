@@ -4,13 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MCAT Script Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Poppins:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <div class="app">
       <aside class="sidebar">
         <div class="sidebar-head">
-          <h1>Scripts</h1>
+          <h1>Link to Scripts</h1>
           <button id="new-btn" type="button" title="Start a new script">+ New</button>
         </div>
         <ul id="history-list" class="history-list"></ul>
@@ -39,9 +45,9 @@
         </section>
 
         <section class="panel">
-          <div class="output-head">
+          <div class="output-head tight">
             <label class="field-label" for="transcript">Transcript</label>
-            <button id="copy-transcript-btn" type="button">Copy</button>
+            <button id="copy-transcript-btn" type="button" hidden>Copy</button>
           </div>
           <textarea
             id="transcript"
