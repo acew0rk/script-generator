@@ -19,6 +19,26 @@
 
       <main class="main">
         <section class="panel">
+          <label class="field-label" for="link">From a TikTok link</label>
+          <div class="link-row">
+            <input
+              id="link"
+              type="url"
+              class="link-input"
+              placeholder="https://www.tiktok.com/@username/video/…"
+              spellcheck="false"
+            />
+            <button id="link-btn" type="button" class="primary">Get script</button>
+          </div>
+          <p class="hint">
+            Downloads the video, transcribes it with ElevenLabs, then writes the script.
+            The transcript lands in the box below so you can fix any misheard terms and
+            regenerate. If a download fails, paste the transcript below instead.
+          </p>
+          <span id="link-status" class="status" role="status" aria-live="polite"></span>
+        </section>
+
+        <section class="panel">
           <label class="field-label" for="transcript">Transcript</label>
           <textarea
             id="transcript"

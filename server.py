@@ -8,14 +8,19 @@ Then open http://localhost:3000   (Ctrl+C to stop)
 """
 
 import base64
+import glob
 import hmac
 import json
 import mimetypes
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -55,6 +60,12 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 # If set, the whole site is gated behind this password (HTTP Basic Auth).
 # Leave empty for local use; set it on the hosted deployment.
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
+# Optional. Enables the "paste a link" flow: yt-dlp downloads the video, then
+# ElevenLabs speech-to-text transcribes it. Without this key, only the
+# paste-a-transcript flow works.
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+ELEVENLABS_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text"
+ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL", "scribe_v1")
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" % MODEL
 )
@@ -156,6 +167,163 @@ def _describe_http_error(exc):
     return "Gemini API error (%s)." % exc.code
 
 
+# ---- Link -> transcript (yt-dlp download + ElevenLabs speech-to-text) --------
+
+def _short(exc):
+    parts = str(exc).strip().splitlines()
+    return (parts[-1] if parts else "unknown")[:180]
+
+
+def _ytdlp_binary():
+    """Prefer a standalone yt-dlp binary (self-contained, always current) over the
+    pip module. Order: $YTDLP_BIN, ./bin/yt-dlp, yt-dlp on PATH."""
+    candidates = [
+        os.environ.get("YTDLP_BIN"),
+        os.path.join(BASE_DIR, "bin", "yt-dlp"),
+        shutil.which("yt-dlp"),
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
+def _download_media(url):
+    """Download the media at `url` with yt-dlp. Returns (file_path, tmpdir)."""
+    tmpdir = tempfile.mkdtemp(prefix="mcat-dl-")
+    outtmpl = os.path.join(tmpdir, "media.%(ext)s")
+    binary = _ytdlp_binary()
+
+    try:
+        if binary:
+            proc = subprocess.run(
+                [binary, "-q", "--no-warnings", "--no-playlist",
+                 "-f", "mp4/bestaudio/best", "-o", outtmpl, url],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180,
+            )
+            if proc.returncode != 0:
+                raise RuntimeError(proc.stdout.decode("utf-8", "replace"))
+        else:
+            try:
+                import yt_dlp
+            except ImportError:
+                shutil.rmtree(tmpdir, ignore_errors=True)
+                raise ApiError(
+                    501,
+                    "Link download needs yt-dlp. Run: pip3 install -r requirements.txt "
+                    "(or drop the yt-dlp binary in ./bin/).",
+                )
+            opts = {
+                "outtmpl": outtmpl, "format": "mp4/bestaudio/best",
+                "noplaylist": True, "quiet": True, "no_warnings": True,
+                "socket_timeout": 60,
+            }
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+    except ApiError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise ApiError(
+            502,
+            "Couldn't download that link (%s). TikTok sometimes blocks this "
+            "(more so from a server) -- try again, run the app locally, or paste "
+            "the transcript instead." % _short(exc),
+        )
+
+    files = glob.glob(os.path.join(tmpdir, "media.*"))
+    if not files:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise ApiError(502, "The download produced no file. Paste the transcript instead.")
+    return files[0], tmpdir
+
+
+def _multipart(boundary, fields, file_field, filename, file_bytes):
+    out = []
+    for name, value in fields.items():
+        out.append(("--%s\r\n" % boundary).encode())
+        out.append(
+            ('Content-Disposition: form-data; name="%s"\r\n\r\n' % name).encode()
+        )
+        out.append(("%s\r\n" % value).encode())
+    out.append(("--%s\r\n" % boundary).encode())
+    out.append(
+        (
+            'Content-Disposition: form-data; name="%s"; filename="%s"\r\n'
+            % (file_field, filename)
+        ).encode()
+    )
+    out.append(b"Content-Type: application/octet-stream\r\n\r\n")
+    out.append(file_bytes)
+    out.append(b"\r\n")
+    out.append(("--%s--\r\n" % boundary).encode())
+    return b"".join(out)
+
+
+def transcribe_link(url):
+    if not ELEVENLABS_API_KEY:
+        raise ApiError(
+            501,
+            "Link transcription isn't set up here. Paste the transcript instead.",
+        )
+    if not re.match(r"^https?://", url, re.IGNORECASE):
+        raise ApiError(400, "That doesn't look like a link -- paste a full https:// URL.")
+
+    path, tmpdir = _download_media(url)
+    try:
+        with open(path, "rb") as fh:
+            blob = fh.read()
+        filename = os.path.basename(path)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    boundary = "----mcat%s" % uuid.uuid4().hex
+    body = _multipart(
+        boundary,
+        fields={"model_id": ELEVENLABS_MODEL, "tag_audio_events": "false"},
+        file_field="file",
+        filename=filename,
+        file_bytes=blob,
+    )
+    req = urllib.request.Request(
+        ELEVENLABS_STT_URL,
+        data=body,
+        method="POST",
+        headers={
+            "xi-api-key": ELEVENLABS_API_KEY,
+            "Content-Type": "multipart/form-data; boundary=%s" % boundary,
+            "Content-Length": str(len(body)),
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            payload = json.loads(exc.read().decode("utf-8"))
+            detail = payload.get("detail", "")
+            if isinstance(detail, dict):
+                detail = detail.get("message", "")
+        except Exception:
+            pass
+        if exc.code in (401, 403):
+            raise ApiError(exc.code, "ElevenLabs rejected the API key (check ELEVENLABS_API_KEY).")
+        raise ApiError(
+            exc.code,
+            "ElevenLabs error (%s)%s" % (exc.code, ": " + detail if detail else ""),
+        )
+    except urllib.error.URLError as exc:
+        raise ApiError(502, "Couldn't reach ElevenLabs: %s" % exc.reason)
+    except json.JSONDecodeError:
+        raise ApiError(502, "ElevenLabs returned an unreadable response.")
+
+    text = (data.get("text") or "").strip()
+    if not text:
+        raise ApiError(502, "ElevenLabs returned an empty transcript. Try a different link.")
+    return text
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MCATScriptGen/3.0"
     protocol_version = "HTTP/1.1"
@@ -224,26 +392,43 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send_file(path)
 
-    def do_POST(self):
-        if not self._authed():
-            self._require_auth()
-            return
-        if self.path.split("?", 1)[0] != "/api/generate":
-            self._send_json(404, {"error": "Not found"})
-            return
-
+    def _read_json_body(self):
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             length = 0
         if length <= 0 or length > MAX_BODY_BYTES:
             self._send_json(400, {"error": "Request body missing or too large."})
-            return
-
+            return None
         try:
-            data = json.loads(self.rfile.read(length).decode("utf-8"))
+            return json.loads(self.rfile.read(length).decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
             self._send_json(400, {"error": "Invalid JSON body."})
+            return None
+
+    def _fail(self, exc):
+        if isinstance(exc, ApiError):
+            status = exc.status if 400 <= exc.status < 600 else 500
+            self._send_json(status, {"error": exc.message})
+        else:
+            sys.stderr.write("Unexpected error: %r\n" % exc)
+            self._send_json(500, {"error": "Unexpected server error. Check the logs."})
+
+    def do_POST(self):
+        if not self._authed():
+            self._require_auth()
+            return
+        path = self.path.split("?", 1)[0]
+        if path == "/api/generate":
+            self._handle_generate()
+        elif path == "/api/from-link":
+            self._handle_from_link()
+        else:
+            self._send_json(404, {"error": "Not found"})
+
+    def _handle_generate(self):
+        data = self._read_json_body()
+        if data is None:
             return
 
         transcript = data.get("transcript")
@@ -258,15 +443,30 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             result = call_gemini(transcript.strip(), image)
-        except ApiError as exc:
-            status = exc.status if 400 <= exc.status < 600 else 500
-            self._send_json(status, {"error": exc.message})
-            return
         except Exception as exc:  # noqa: BLE001
-            sys.stderr.write("Unexpected error: %r\n" % exc)
-            self._send_json(500, {"error": "Unexpected server error. Check the logs."})
+            self._fail(exc)
             return
 
+        self._send_json(200, result)
+
+    def _handle_from_link(self):
+        data = self._read_json_body()
+        if data is None:
+            return
+
+        link = data.get("link")
+        if not isinstance(link, str) or not link.strip():
+            self._send_json(400, {"error": "Paste a link first."})
+            return
+
+        try:
+            transcript = transcribe_link(link.strip())
+            result = call_gemini(transcript, None)
+        except Exception as exc:  # noqa: BLE001
+            self._fail(exc)
+            return
+
+        result["transcript"] = transcript
         self._send_json(200, result)
 
 

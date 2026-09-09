@@ -1,2 +1,4 @@
-# No third-party packages — this app uses only the Python standard library.
-# This file exists so hosting platforms detect the project as Python.
+# yt-dlp downloads the video from a pasted link (e.g. TikTok) so it can be
+# transcribed. Everything else in this app uses only the standard library.
+# TikTok breaks older versions often -- keep this floor recent.
+yt-dlp>=2026.7.0

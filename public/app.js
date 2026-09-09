@@ -8,6 +8,9 @@ const SIGNAL_PHRASES = [
 ];
 
 const els = {
+  link: document.getElementById("link"),
+  linkBtn: document.getElementById("link-btn"),
+  linkStatus: document.getElementById("link-status"),
   transcript: document.getElementById("transcript"),
   dropzone: document.getElementById("dropzone"),
   dropzoneText: document.getElementById("dropzone-text"),
@@ -199,9 +202,52 @@ async function generate() {
   }
 }
 
-function setBusy(busy) {
+function setBusy(busy, msg) {
   els.generateBtn.disabled = busy;
-  els.status.textContent = busy ? "Generating…" : "";
+  els.linkBtn.disabled = busy;
+  els.status.textContent = busy ? msg || "Generating…" : "";
+}
+
+async function generateFromLink() {
+  const link = els.link.value.trim();
+  if (!link) {
+    els.link.focus();
+    return;
+  }
+
+  setBusy(true, "Downloading & transcribing…");
+  els.linkStatus.textContent = "This can take up to a minute.";
+  showBanner("", null);
+
+  try {
+    const res = await fetch("/api/from-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ link }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showBanner(data.error || `Request failed (${res.status}).`, "error");
+      return;
+    }
+
+    els.transcript.value = data.transcript || "";
+    showScript(data.script, data.truncated);
+    saveToHistory({
+      id: String(Date.now()),
+      ts: Date.now(),
+      transcript: data.transcript || "",
+      hasImage: false,
+      source: link,
+      script: data.script,
+    });
+  } catch (err) {
+    showBanner("Could not reach the server. Is it still running?", "error");
+  } finally {
+    setBusy(false);
+    els.linkStatus.textContent = "";
+  }
 }
 
 function showBanner(text, kind) {
@@ -239,6 +285,10 @@ function showScript(script, truncated) {
 }
 
 els.generateBtn.addEventListener("click", generate);
+els.linkBtn.addEventListener("click", generateFromLink);
+els.link.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") generateFromLink();
+});
 
 els.copyBtn.addEventListener("click", async () => {
   try {
@@ -254,13 +304,15 @@ els.copyBtn.addEventListener("click", async () => {
 els.newBtn.addEventListener("click", () => {
   activeId = null;
   currentScript = "";
+  els.link.value = "";
+  els.linkStatus.textContent = "";
   els.transcript.value = "";
   clearImage();
   showBanner("", null);
   els.copyBtn.hidden = true;
   els.output.innerHTML = '<p class="placeholder">The generated script will appear here.</p>';
   renderHistory();
-  els.transcript.focus();
+  els.link.focus();
 });
 
 /* ---------- history (localStorage) ---------- */

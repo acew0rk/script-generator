@@ -33,10 +33,14 @@ There are two accounts to make: **GitHub** (stores the code) and **Render** (run
 2. In the Render dashboard click **New +** → **Blueprint**.
 3. Pick the `mcat-script-generator` repo. Render reads `render.yaml` and shows the
    service it will create.
-4. It will ask you to fill in the two secret values:
+4. It will ask you to fill in the secret values:
    - **GEMINI_API_KEY** — paste your Gemini key (from <https://aistudio.google.com/apikey>)
    - **APP_PASSWORD** — make up a password. This is what you give to people who
      should be allowed to use the site.
+   - **ELEVENLABS_API_KEY** — optional. Paste it to enable the "paste a TikTok
+     link" button on the hosted site. Note: TikTok often blocks downloads from
+     Render's servers, so that button is most reliable when you run the app
+     locally. Leave it blank to hide/disable the feature online.
 5. Click **Apply** / **Create**. First build takes 2–4 minutes.
 6. When it says **Live**, click the URL at the top. Your browser will pop up a
    login box: leave the username blank (or type anything) and enter the password.

@@ -17,3 +17,5 @@ services:
         sync: false   # you paste this in the Render dashboard
       - key: APP_PASSWORD
         sync: false   # the password people type to use the site
+      - key: ELEVENLABS_API_KEY
+        sync: false   # optional: enables the "paste a TikTok link" flow

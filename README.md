@@ -9,20 +9,28 @@ Runs on **Google's Gemini API free tier** — no credit card, no cost.
 The instruction prompt lives on the server ([system_prompt.py](system_prompt.py)),
 so you never paste it again.
 
+## Two ways to make a script
+
+1. **Paste a transcript** → Generate. Free (Gemini).
+2. **Paste a TikTok link** → it downloads the video, transcribes it with
+   ElevenLabs, then writes the script. Needs an ElevenLabs key (paid, per-minute).
+   The transcript lands in the box so you can fix misheard terms and regenerate.
+
 ## Setup
 
-Requires Python 3 (macOS ships with `python3`). **No packages to install** —
-standard library only.
+Requires Python 3 (3.10+ recommended; 3.9 works with warnings).
+
+```bash
+cp .env.example .env
+pip3 install -r requirements.txt   # installs yt-dlp, for the link feature
+```
 
 1. Get a free Gemini API key at <https://aistudio.google.com/apikey>
    (sign in with a Google account, click "Create API key" — no billing setup).
-2. In this folder:
-   ```bash
-   cp .env.example .env
+2. Edit `.env`:
    ```
-3. Edit `.env` and paste your key:
-   ```
-   GEMINI_API_KEY=AIza...
+   GEMINI_API_KEY=AQ...            # required
+   ELEVENLABS_API_KEY=sk_...       # optional, only for the TikTok-link feature
    ```
 
 ## Run
@@ -50,10 +58,13 @@ Open <http://localhost:3000>. Press `Ctrl+C` to stop.
 ## Sharing it with other people (deploy to Render, free)
 
 The steps are in [DEPLOY.md](DEPLOY.md). In short: put this folder on GitHub, then
-point Render at it. Set two secret values on Render:
+point Render at it. Secret values on Render:
 
 - `GEMINI_API_KEY` — your key
 - `APP_PASSWORD` — a password anyone must type before the site works
+- `ELEVENLABS_API_KEY` — optional; the TikTok-link feature often fails from a
+  hosted server anyway (TikTok blocks datacenter IPs), so it's most reliable when
+  you run the app locally
 
 Locally, leave `APP_PASSWORD` empty in `.env` and there's no password prompt.
 

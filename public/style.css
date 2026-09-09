@@ -164,6 +164,38 @@ body {
   outline-offset: 1px;
 }
 
+/* Link input */
+.link-row {
+  display: flex;
+  gap: 8px;
+}
+
+.link-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text);
+  background: #fcfcfd;
+}
+
+.link-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.link-row .primary {
+  white-space: nowrap;
+}
+
+.hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 /* Attach */
 .attach {
   margin-top: 12px;
