@@ -1,8 +1,8 @@
 "use strict";
 
 const HISTORY_KEY = "mcat-scripts-history";
-const HISTORY_LIMIT = 100;
-const MAX_BATCH = 20;
+const HISTORY_LIMIT = 500;
+const MAX_BATCH = 200;
 
 const els = {
   link: document.getElementById("link"),
@@ -33,6 +33,25 @@ function shortUrl(u) {
   } catch {
     return String(u).slice(0, 70);
   }
+}
+
+// Identity for "already done?" checks — ignores TikTok's ?_r/?_t tracking params.
+function linkKey(u) {
+  try {
+    const p = new URL(u);
+    return (p.host + p.pathname)
+      .replace(/^www\./, "")
+      .replace(/\/+$/, "")
+      .toLowerCase();
+  } catch {
+    return String(u).trim().toLowerCase();
+  }
+}
+
+function doneKeys() {
+  const set = new Set();
+  for (const it of loadHistory()) if (it.source) set.add(linkKey(it.source));
+  return set;
 }
 
 function setBusy(busy) {
@@ -76,18 +95,42 @@ function setResultRow(li, kind, text, href) {
 /* ---------- generate from link(s) ---------- */
 
 async function generateFromLinks() {
-  const links = parseLinks(els.link.value);
-  if (!links.length) {
+  const pasted = parseLinks(els.link.value);
+  if (!pasted.length) {
     els.link.focus();
     return;
   }
+
+  // Drop duplicates within the paste, and anything already in history.
+  const already = doneKeys();
+  const seen = new Set();
+  const links = [];
+  let skipped = 0;
+  for (const u of pasted) {
+    const k = linkKey(u);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    if (already.has(k)) skipped += 1;
+    else links.push(u);
+  }
+
+  if (!links.length) {
+    els.linkStatus.textContent = skipped
+      ? `All ${skipped} already done — nothing new. Delete a row from the list on the left to redo it.`
+      : "";
+    return;
+  }
   if (links.length > MAX_BATCH) {
-    els.linkStatus.textContent = `Too many — ${MAX_BATCH} or fewer at a time.`;
+    els.linkStatus.textContent = `${links.length} new links — ${MAX_BATCH} max per run.`;
     return;
   }
 
   els.results.hidden = false;
   els.results.innerHTML = "";
+  if (skipped) {
+    const li = addResultRow(`${skipped} already done`);
+    setResultRow(li, "ok", "skipped");
+  }
   const rows = links.map((u) => addResultRow(shortUrl(u)));
 
   setBusy(true);
@@ -118,7 +161,8 @@ async function generateFromLinks() {
   }
 
   setBusy(false);
-  els.linkStatus.textContent = `${done} of ${links.length} done`;
+  els.linkStatus.textContent =
+    `${done} of ${links.length} done` + (skipped ? `, ${skipped} skipped` : "");
 }
 
 /* ---------- generate from a pasted transcript ---------- */

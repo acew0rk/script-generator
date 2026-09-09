@@ -11,8 +11,10 @@ script. Two input paths:
    link → `yt-dlp` downloads the video → ElevenLabs `speech-to-text` transcribes
    it → Gemini writes the script → the row is written to Airtable.
    **Batch is frontend-only**: `app.js` splits the textarea on whitespace and
-   loops the single-link endpoint sequentially (`MAX_BATCH` 20). No server-side
-   batch endpoint.
+   loops the single-link endpoint sequentially (`MAX_BATCH` 200). No server-side
+   batch endpoint. It's **resumable**: links whose normalized `linkKey()` already
+   appears in the localStorage history (`doneKeys()`) are skipped, so re-pasting
+   the full list after a partial run only processes the leftovers.
 2. **Paste a transcript** (fallback, collapsed `<details>`) → `POST /api/generate`
    → Gemini → Airtable. For when a download fails or the transcript came from
    elsewhere (transcript365).
