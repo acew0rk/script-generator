@@ -12,6 +12,7 @@ const els = {
   linkBtn: document.getElementById("link-btn"),
   linkStatus: document.getElementById("link-status"),
   transcript: document.getElementById("transcript"),
+  copyTranscriptBtn: document.getElementById("copy-transcript-btn"),
   dropzone: document.getElementById("dropzone"),
   dropzoneText: document.getElementById("dropzone-text"),
   imageInput: document.getElementById("image-input"),
@@ -290,16 +291,20 @@ els.link.addEventListener("keydown", (e) => {
   if (e.key === "Enter") generateFromLink();
 });
 
-els.copyBtn.addEventListener("click", async () => {
+async function copyToButton(text, btn) {
   try {
-    await navigator.clipboard.writeText(currentScript);
-    els.copyBtn.textContent = "Copied";
-    setTimeout(() => (els.copyBtn.textContent = "Copy"), 1500);
+    await navigator.clipboard.writeText(text || "");
+    btn.textContent = "Copied";
   } catch {
-    els.copyBtn.textContent = "Copy failed";
-    setTimeout(() => (els.copyBtn.textContent = "Copy"), 1500);
+    btn.textContent = "Copy failed";
   }
-});
+  setTimeout(() => (btn.textContent = "Copy"), 1500);
+}
+
+els.copyBtn.addEventListener("click", () => copyToButton(currentScript, els.copyBtn));
+els.copyTranscriptBtn.addEventListener("click", () =>
+  copyToButton(els.transcript.value, els.copyTranscriptBtn),
+);
 
 els.newBtn.addEventListener("click", () => {
   activeId = null;

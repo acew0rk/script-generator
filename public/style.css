@@ -265,6 +265,7 @@ button.primary:disabled {
 }
 
 #new-btn,
+#copy-transcript-btn,
 #copy-btn {
   border: 1px solid var(--border);
   background: var(--panel);
