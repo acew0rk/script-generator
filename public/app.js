@@ -11,6 +11,7 @@ const els = {
   link: document.getElementById("link"),
   linkBtn: document.getElementById("link-btn"),
   linkStatus: document.getElementById("link-status"),
+  batchProgress: document.getElementById("batch-progress"),
   transcript: document.getElementById("transcript"),
   copyTranscriptBtn: document.getElementById("copy-transcript-btn"),
   dropzone: document.getElementById("dropzone"),
@@ -229,47 +230,135 @@ function showAirtableNote(info) {
 
 els.transcript.addEventListener("input", updateTranscriptCopy);
 
+const MAX_BATCH = 20;
+
+function parseLinks(raw) {
+  return raw
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter((s) => /^https?:\/\//i.test(s));
+}
+
+function shortUrl(u) {
+  try {
+    const p = new URL(u);
+    return (p.host + p.pathname).replace(/^www\./, "").slice(0, 64);
+  } catch {
+    return u.slice(0, 64);
+  }
+}
+
+function addBatchRow(url) {
+  const li = document.createElement("li");
+  li.className = "batch-row";
+  const label = document.createElement("span");
+  label.className = "batch-url";
+  label.textContent = shortUrl(url);
+  const state = document.createElement("span");
+  state.className = "batch-state";
+  state.textContent = "queued";
+  li.append(label, state);
+  li.addEventListener("click", () => {
+    if (!li._result) return;
+    els.transcript.value = li._result.transcript || "";
+    updateTranscriptCopy();
+    showScript(li._result.script, li._result.truncated);
+    showAirtableNote(li._result.airtable);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  els.batchProgress.appendChild(li);
+  return li;
+}
+
+function setBatchRow(li, kind, text) {
+  li.querySelector(".batch-state").textContent = text;
+  li.classList.remove("run", "ok", "err");
+  li.classList.add(kind);
+}
+
 async function generateFromLink() {
-  const link = els.link.value.trim();
-  if (!link) {
+  const links = parseLinks(els.link.value);
+  if (!links.length) {
     els.link.focus();
     return;
   }
+  if (links.length > MAX_BATCH) {
+    showBanner(
+      `That's ${links.length} links — do ${MAX_BATCH} or fewer at a time.`,
+      "error",
+    );
+    return;
+  }
 
-  setBusy(true, "Downloading & transcribing…");
-  els.linkStatus.textContent = "This can take up to a minute.";
   showBanner("", null);
+  const batch = links.length > 1;
+  els.batchProgress.innerHTML = "";
+  els.batchProgress.hidden = !batch;
+  const rows = batch ? links.map(addBatchRow) : [];
 
-  try {
-    const res = await fetch("/api/from-link", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ link }),
-    });
-    const data = await res.json();
+  setBusy(true, batch ? `Processing 0/${links.length}…` : "Downloading & transcribing…");
+  els.linkStatus.textContent = batch ? "" : "This can take up to a minute.";
 
-    if (!res.ok) {
-      showBanner(data.error || `Request failed (${res.status}).`, "error");
-      return;
+  let done = 0;
+  let lastOk = null;
+
+  for (let i = 0; i < links.length; i++) {
+    const url = links[i];
+    if (batch) setBatchRow(rows[i], "run", "working…");
+    els.status.textContent = batch
+      ? `Processing ${i + 1}/${links.length}…`
+      : "Downloading & transcribing…";
+
+    try {
+      const res = await fetch("/api/from-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ link: url }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        const msg = data.error || `failed (${res.status})`;
+        if (batch) setBatchRow(rows[i], "err", msg);
+        else showBanner(msg, "error");
+        continue;
+      }
+
+      done++;
+      lastOk = { url, ...data };
+      if (batch) {
+        rows[i]._result = data;
+        const at = data.airtable;
+        setBatchRow(
+          rows[i],
+          "ok",
+          at ? (at.ok ? "✓ script + Airtable" : "✓ script (Airtable failed)") : "✓ script",
+        );
+      }
+      saveToHistory({
+        id: String(Date.now()) + "-" + i,
+        ts: Date.now(),
+        transcript: data.transcript || "",
+        hasImage: false,
+        source: url,
+        script: data.script,
+      });
+    } catch (err) {
+      if (batch) setBatchRow(rows[i], "err", "server unreachable");
+      else showBanner("Could not reach the server. Is it still running?", "error");
     }
+  }
 
-    els.transcript.value = data.transcript || "";
+  setBusy(false);
+  els.linkStatus.textContent = batch ? `${done} of ${links.length} done` : "";
+
+  if (lastOk) {
+    els.transcript.value = lastOk.transcript || "";
     updateTranscriptCopy();
-    showScript(data.script, data.truncated);
-    showAirtableNote(data.airtable);
-    saveToHistory({
-      id: String(Date.now()),
-      ts: Date.now(),
-      transcript: data.transcript || "",
-      hasImage: false,
-      source: link,
-      script: data.script,
-    });
-  } catch (err) {
-    showBanner("Could not reach the server. Is it still running?", "error");
-  } finally {
-    setBusy(false);
-    els.linkStatus.textContent = "";
+    showScript(lastOk.script, lastOk.truncated);
+    showAirtableNote(lastOk.airtable);
+  } else if (batch) {
+    showBanner("None of the links could be processed.", "error");
   }
 }
 
@@ -310,7 +399,7 @@ function showScript(script, truncated) {
 els.generateBtn.addEventListener("click", generate);
 els.linkBtn.addEventListener("click", generateFromLink);
 els.link.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") generateFromLink();
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) generateFromLink();
 });
 
 async function copyToButton(text, btn) {
@@ -333,6 +422,8 @@ els.newBtn.addEventListener("click", () => {
   currentScript = "";
   els.link.value = "";
   els.linkStatus.textContent = "";
+  els.batchProgress.innerHTML = "";
+  els.batchProgress.hidden = true;
   els.transcript.value = "";
   updateTranscriptCopy();
   clearImage();

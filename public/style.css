@@ -175,17 +175,15 @@ body {
 }
 
 /* Link input */
-.link-row {
-  display: flex;
-  gap: 8px;
-}
-
 .link-input {
-  flex: 1;
+  display: block;
+  width: 100%;
+  resize: vertical;
+  min-height: 46px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: var(--text);
   background: #fcfcfd;
 }
@@ -195,8 +193,73 @@ body {
   outline-offset: 1px;
 }
 
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
 .link-row .primary {
   white-space: nowrap;
+}
+
+/* Batch progress list */
+.batch-progress {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.batch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.batch-row:first-child {
+  border-top: none;
+}
+
+.batch-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-state {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.batch-row.run .batch-state {
+  color: var(--accent);
+}
+
+.batch-row.ok {
+  cursor: pointer;
+}
+
+.batch-row.ok .batch-state {
+  color: #1a7f4b;
+}
+
+.batch-row.ok:hover {
+  background: #f2faf5;
+}
+
+.batch-row.err .batch-state {
+  color: var(--error-text);
 }
 
 .hint {

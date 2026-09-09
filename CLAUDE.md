@@ -8,9 +8,13 @@ A single-purpose web app for turning MCAT short-video content into a narrator
 script. Two input paths:
 
 1. **Paste a transcript** → `POST /api/generate` → Gemini writes the script. Free.
-2. **Paste a link (TikTok)** → `POST /api/from-link` → `yt-dlp` downloads the
-   video → ElevenLabs `speech-to-text` transcribes it → same Gemini step. The
-   response includes the raw `transcript` so the UI can show it for editing.
+2. **Paste TikTok link(s)** → `POST /api/from-link` (one request per link) →
+   `yt-dlp` downloads the video → ElevenLabs `speech-to-text` transcribes it →
+   same Gemini step. The response includes the raw `transcript` for editing.
+   **Batch is frontend-only**: `app.js` splits the textarea on whitespace and
+   loops the single-link endpoint sequentially (`MAX_BATCH` 20), rendering a
+   per-link progress list; the last success loads into the main panels. No
+   server-side batch endpoint.
 
 Runs locally for the owner and is also deployed publicly (password-gated) on Render.
 

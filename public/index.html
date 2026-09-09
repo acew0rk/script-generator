@@ -25,23 +25,24 @@
 
       <main class="main">
         <section class="panel">
-          <label class="field-label" for="link">From a TikTok link</label>
+          <label class="field-label" for="link">From TikTok link(s)</label>
+          <textarea
+            id="link"
+            class="link-input"
+            rows="3"
+            placeholder="One TikTok link per line — paste as many as you want"
+            spellcheck="false"
+          ></textarea>
           <div class="link-row">
-            <input
-              id="link"
-              type="url"
-              class="link-input"
-              placeholder="https://www.tiktok.com/@username/video/…"
-              spellcheck="false"
-            />
-            <button id="link-btn" type="button" class="primary">Get script</button>
+            <button id="link-btn" type="button" class="primary">Get script(s)</button>
+            <span id="link-status" class="status" role="status" aria-live="polite"></span>
           </div>
           <p class="hint">
-            Downloads the video, transcribes it with ElevenLabs, then writes the script.
-            The transcript lands in the box below so you can fix any misheard terms and
-            regenerate. If a download fails, paste the transcript below instead.
+            Each link: downloads the video, transcribes it with ElevenLabs, writes the
+            script, saves a row to Airtable. They run one at a time. The last one lands in
+            the boxes below — click any finished item in the list to load it there.
           </p>
-          <span id="link-status" class="status" role="status" aria-live="polite"></span>
+          <ul id="batch-progress" class="batch-progress" hidden></ul>
         </section>
 
         <section class="panel">
