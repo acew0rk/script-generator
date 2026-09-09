@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+"""Local web app: turn an MCAT video transcript into a narrator script.
+
+Uses Google's Gemini API (free tier -- no credit card). Standard library only.
+
+Run:  python3 server.py
+Then open http://localhost:3000   (Ctrl+C to stop)
+"""
+
+import base64
+import hmac
+import json
+import mimetypes
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PUBLIC_DIR = os.path.join(BASE_DIR, "public")
+
+ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+MAX_BODY_BYTES = 15 * 1024 * 1024
+REQUEST_TIMEOUT = 300  # seconds
+
+
+def load_dotenv(path):
+    """Minimal .env loader: KEY=VALUE per line. Does not override real env vars."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+from system_prompt import SYSTEM_PROMPT  # noqa: E402  (after load_dotenv on purpose)
+
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+PORT = int(os.environ.get("PORT", "3000"))
+HOST = os.environ.get("HOST", "127.0.0.1")
+API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+# If set, the whole site is gated behind this password (HTTP Basic Auth).
+# Leave empty for local use; set it on the hosted deployment.
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
+GEMINI_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" % MODEL
+)
+
+
+class ApiError(Exception):
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+def call_gemini(transcript, image):
+    parts = []
+    if image is not None:
+        media_type = image.get("media_type")
+        data = image.get("data")
+        if media_type not in ALLOWED_IMAGE_TYPES or not isinstance(data, str) or not data:
+            raise ApiError(
+                400, "Image must be a base64 PNG, JPEG, WebP, or GIF. Try re-attaching it."
+            )
+        parts.append({"inlineData": {"mimeType": media_type, "data": data}})
+    parts.append({"text": transcript})
+
+    if not API_KEY:
+        raise ApiError(
+            401,
+            "GEMINI_API_KEY is not set. Get a free key at "
+            "https://aistudio.google.com/apikey and add it to your .env file, then restart.",
+        )
+
+    payload = {
+        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": [{"role": "user", "parts": parts}],
+        "generationConfig": {"temperature": 1, "maxOutputTokens": 20000},
+    }
+
+    req = urllib.request.Request(
+        GEMINI_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={"content-type": "application/json", "x-goog-api-key": API_KEY},
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise ApiError(exc.code, _describe_http_error(exc))
+    except urllib.error.URLError as exc:
+        raise ApiError(502, "Could not reach the Gemini API: %s" % exc.reason)
+    except json.JSONDecodeError:
+        raise ApiError(502, "The Gemini API returned an unreadable response.")
+
+    block = body.get("promptFeedback", {}).get("blockReason")
+    if block:
+        raise ApiError(422, "Gemini blocked this request (%s)." % block)
+
+    candidates = body.get("candidates") or []
+    if not candidates:
+        raise ApiError(502, "Gemini returned no output. Try again.")
+
+    cand = candidates[0]
+    finish = cand.get("finishReason")
+    script = "".join(
+        part.get("text", "") for part in cand.get("content", {}).get("parts", [])
+    ).strip()
+
+    # Defensive: drop a leading "Short Video Script" title if the model adds one anyway.
+    script = re.sub(
+        r"^\s*(?:#{1,6}\s*|\*\*)?\s*short video script\s*(?:\*\*)?\s*\n+",
+        "",
+        script,
+        count=1,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    if not script:
+        if finish and finish != "STOP":
+            raise ApiError(422, "Gemini stopped early (%s) with no usable text." % finish)
+        raise ApiError(502, "Gemini returned an empty response. Try again.")
+
+    return {"script": script, "model": MODEL, "truncated": finish == "MAX_TOKENS"}
+
+
+def _describe_http_error(exc):
+    detail = ""
+    try:
+        parsed = json.loads(exc.read().decode("utf-8"))
+        detail = parsed.get("error", {}).get("message", "")
+    except Exception:
+        pass
+    if exc.code in (400, 403) and ("API key" in detail or "API_KEY" in detail):
+        return "Gemini rejected the API key. Check GEMINI_API_KEY in your .env file."
+    if exc.code == 429:
+        return "Hit Gemini's free-tier rate limit. Wait a minute and try again."
+    if detail:
+        return "Gemini API error (%s): %s" % (exc.code, detail)
+    return "Gemini API error (%s)." % exc.code
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "MCATScriptGen/3.0"
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt, *args):
+        sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
+
+    def _authed(self):
+        if not APP_PASSWORD:
+            return True
+        header = self.headers.get("Authorization", "")
+        if header.startswith("Basic "):
+            try:
+                decoded = base64.b64decode(header[6:]).decode("utf-8", "replace")
+            except Exception:
+                return False
+            _, _, supplied = decoded.partition(":")
+            return hmac.compare_digest(supplied, APP_PASSWORD)
+        return False
+
+    def _require_auth(self):
+        body = b"Authentication required."
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="MCAT Script Generator"')
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_json(self, status, obj):
+        payload = json.dumps(obj).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _send_file(self, rel_path):
+        if rel_path in ("", "/"):
+            rel_path = "index.html"
+        rel_path = rel_path.lstrip("/")
+        full = os.path.normpath(os.path.join(PUBLIC_DIR, rel_path))
+        if full != PUBLIC_DIR and not full.startswith(PUBLIC_DIR + os.sep):
+            self._send_json(403, {"error": "Forbidden"})
+            return
+        if not os.path.isfile(full):
+            self._send_json(404, {"error": "Not found"})
+            return
+        ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
+        with open(full, "rb") as fh:
+            data = fh.read()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        if path == "/healthz":
+            self._send_json(200, {"ok": True})
+            return
+        if not self._authed():
+            self._require_auth()
+            return
+        self._send_file(path)
+
+    def do_POST(self):
+        if not self._authed():
+            self._require_auth()
+            return
+        if self.path.split("?", 1)[0] != "/api/generate":
+            self._send_json(404, {"error": "Not found"})
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if length <= 0 or length > MAX_BODY_BYTES:
+            self._send_json(400, {"error": "Request body missing or too large."})
+            return
+
+        try:
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            self._send_json(400, {"error": "Invalid JSON body."})
+            return
+
+        transcript = data.get("transcript")
+        if not isinstance(transcript, str) or not transcript.strip():
+            self._send_json(400, {"error": "Transcript is required."})
+            return
+
+        image = data.get("image")
+        if image is not None and not isinstance(image, dict):
+            self._send_json(400, {"error": "Invalid image payload."})
+            return
+
+        try:
+            result = call_gemini(transcript.strip(), image)
+        except ApiError as exc:
+            status = exc.status if 400 <= exc.status < 600 else 500
+            self._send_json(status, {"error": exc.message})
+            return
+        except Exception as exc:  # noqa: BLE001
+            sys.stderr.write("Unexpected error: %r\n" % exc)
+            self._send_json(500, {"error": "Unexpected server error. Check the logs."})
+            return
+
+        self._send_json(200, result)
+
+
+def main():
+    if not API_KEY:
+        sys.stderr.write(
+            "\n[warn] GEMINI_API_KEY is not set. Get a free key at "
+            "https://aistudio.google.com/apikey, copy .env.example to .env, and add it.\n\n"
+        )
+    mimetypes.add_type("text/javascript", ".js")
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    where = "http://localhost:%d" % PORT if HOST in ("127.0.0.1", "localhost") else "port %d" % PORT
+    print("MCAT script generator running at %s" % where)
+    print("Model: %s" % MODEL)
+    print("Password gate: %s" % ("ON" if APP_PASSWORD else "off"))
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down.")
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    main()

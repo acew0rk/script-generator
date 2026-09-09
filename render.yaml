@@ -1,0 +1,19 @@
+# Render deployment blueprint. On https://render.com:
+#   New +  ->  Blueprint  ->  connect this repo.
+# Render reads this file, then asks you to fill in the secret values below.
+services:
+  - type: web
+    name: mcat-script-generator
+    runtime: python
+    plan: free
+    startCommand: python3 server.py
+    healthCheckPath: /healthz
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+      - key: GEMINI_API_KEY
+        sync: false   # you paste this in the Render dashboard
+      - key: APP_PASSWORD
+        sync: false   # the password people type to use the site

@@ -1,0 +1,2 @@
+# No third-party packages — this app uses only the Python standard library.
+# This file exists so hosting platforms detect the project as Python.
