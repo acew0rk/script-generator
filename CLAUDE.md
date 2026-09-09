@@ -18,16 +18,24 @@ Runs locally for the owner and is also deployed publicly (password-gated) on Ren
 
 ```bash
 cp .env.example .env                # put a real GEMINI_API_KEY in .env
-pip3 install -r requirements.txt    # yt-dlp, for the link feature
 python3 server.py                   # serves http://localhost:3000, Ctrl+C to stop
 ```
 
-- **One dependency (`yt-dlp`), no build step, no tests, no linter.** Everything
-  else is standard library. Without `yt-dlp` installed, the paste-a-transcript
-  path still works; the link path returns a clear error.
+- **No tests, no linter.** The only third-party dependency is `yt-dlp` (link
+  feature). Without it, the paste-a-transcript path still works; the link path
+  returns a clear error.
 - Written to run on macOS system `python3` (3.9). Keep new code 3.9-compatible
-  (no `match`, no runtime `X | Y` unions). `yt-dlp` prints a 3.9-deprecation
-  warning locally; Render runs a newer Python so it's clean there.
+  (no `match`, no runtime `X | Y` unions).
+- **`yt-dlp` on this Mac: use the standalone binary, not pip.** Current `yt-dlp`
+  dropped Python 3.9, so `pip install` here gets a stale build that TikTok
+  rejects. `bin/yt-dlp` (a downloaded standalone binary, gitignored) is what the
+  server uses locally — `_download_media()` prefers `$YTDLP_BIN` → `./bin/yt-dlp`
+  → `yt-dlp` on PATH, and only falls back to `import yt_dlp`. Refresh it with:
+  `curl -fsSL -o bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos && chmod +x bin/yt-dlp`
+- On Render (and any non-3.9 machine) the pip module is fine —
+  `pip install -r requirements.txt`.
+- The page pulls Poppins + Lato from Google Fonts via a `<link>` in
+  `public/index.html` — the only external asset.
 - There is no dev/prod split beyond environment variables.
 
 ## Environment variables (read from `.env` locally, from the host dashboard in prod)
@@ -38,6 +46,7 @@ python3 server.py                   # serves http://localhost:3000, Ctrl+C to st
 | `GEMINI_MODEL` | Default `gemini-3.6-flash`. Google retires old model ids — see below |
 | `ELEVENLABS_API_KEY` | Optional. Enables `POST /api/from-link`. Without it that route 501s |
 | `ELEVENLABS_MODEL` | Default `scribe_v1` |
+| `YTDLP_BIN` | Optional. Explicit path to a yt-dlp binary; else `./bin/yt-dlp` or PATH |
 | `APP_PASSWORD` | If set, the **entire site** is behind HTTP Basic Auth. Empty locally |
 | `HOST` | Default `127.0.0.1`. Render sets `0.0.0.0` |
 | `PORT` | Default `3000`. Render injects its own |
@@ -59,10 +68,11 @@ Three moving parts, each in one file:
   The frontend's image shape `{media_type, data}` is translated here into
   Gemini's `inlineData: {mimeType, data}`. All error paths raise `ApiError(status,
   message)` which becomes the JSON `{error}` the UI shows.
-  `transcribe_link()` = `_download_media()` (yt-dlp to a temp dir, always cleaned
-  up) + a hand-built `multipart/form-data` POST to ElevenLabs (`_multipart()` —
-  there is no `requests`). TikTok downloads routinely fail from datacenter IPs;
-  the error message says so and points the user to run locally / paste instead.
+  `transcribe_link()` = `_download_media()` (yt-dlp — binary via `subprocess` if
+  found, else the module — into a temp dir that is always cleaned up) + a
+  hand-built `multipart/form-data` POST to ElevenLabs (`_multipart()` — there is
+  no `requests`). TikTok downloads routinely fail from datacenter IPs; the error
+  message says so and points the user to run locally / paste instead.
 - **`system_prompt.py`** — the instruction prompt sent as Gemini's
   `systemInstruction`. This is the owner's own prompt, verbatim, minus its
   chat-style handshake. **Edit the prompt here.** It is imported *after*
@@ -96,9 +106,13 @@ already happened once: `gemini-2.5-flash` → `gemini-3.6-flash`.
 ## Deployment
 
 - GitHub: `github.com/acew0rk/script-generator`, branch `main`.
-- Render reads `render.yaml` (a Blueprint). It pins `plan: free` and
-  `healthCheckPath: /healthz`; secrets (`GEMINI_API_KEY`, `APP_PASSWORD`) are
-  `sync: false` and entered in the Render dashboard, not committed.
-- **Push to `main` → Render auto-redeploys.** That is the entire deploy process
-  for code changes.
+- Render reads `render.yaml` (a Blueprint): `plan: free`,
+  `buildCommand: pip install -r requirements.txt` (required — a blueprint deploy
+  runs no build step without it, so `yt-dlp` silently won't install),
+  `healthCheckPath: /healthz`. The three secrets (`GEMINI_API_KEY`,
+  `APP_PASSWORD`, `ELEVENLABS_API_KEY`) are `sync: false` and entered in the
+  Render dashboard, not committed.
+- **Push to `main` → Render auto-redeploys.** Changes to `render.yaml` itself
+  (e.g. `buildCommand`) may need a **Manual sync** on the Render Blueprint page
+  before they take effect.
 - Free tier sleeps after ~15 min idle; first request then takes ~50s.
