@@ -50,7 +50,7 @@ python3 server.py                   # serves http://localhost:3000, Ctrl+C to st
 
 | Var | Purpose |
 |---|---|
-| `GEMINI_API_KEY` | Required. Free key from https://aistudio.google.com/apikey |
+| `GEMINI_API_KEY` | Required. Free key(s) from https://aistudio.google.com/apikey — **comma-separated for several** (different Google accounts); `call_gemini()` rotates and fails over on 429 |
 | `GEMINI_MODEL` | Default `gemini-3.6-flash`. Google retires old model ids — see below |
 | `ELEVENLABS_API_KEY` | Optional. Enables `POST /api/from-link`. Without it that route 501s |
 | `ELEVENLABS_MODEL` | Default `scribe_v1` |
@@ -111,10 +111,12 @@ backstop — it only fires when the text actually contains markup and converts t
 common tokens (`\times`, `^{-9}`, `$...$`, …) to spoken words, leaving plain "$5"
 money alone.
 
-`call_gemini()` retries 429/5xx up to 4 times (3s/6s/9s) — the free tier throttles
-per-minute *and* per-day. Once the daily quota is spent, retries can't help and
-every generation fails until it resets (~midnight Pacific). There is no paid
-billing or multi-provider fallback wired up.
+On 429/5xx `call_gemini()` moves to the next key in `GEMINI_API_KEY` (rotated per
+request by `_key_order()`); after a full pass with every key throttled it waits 6s
+and makes one more pass, then raises. This stretches the free tier — but the
+quota is per-Google-account per-day, so once *all* the keys' daily quotas are
+spent, nothing works until reset (~midnight Pacific). No paid billing or
+non-Gemini fallback is wired up. Response parsing lives in `_extract_script()`.
 
 ### `_finish()` — signal phrases + Airtable
 

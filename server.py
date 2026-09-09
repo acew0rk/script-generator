@@ -58,7 +58,23 @@ from system_prompt import SYSTEM_PROMPT  # noqa: E402  (after load_dotenv on pur
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 PORT = int(os.environ.get("PORT", "3000"))
 HOST = os.environ.get("HOST", "127.0.0.1")
-API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+
+
+def _split_keys(raw):
+    """One or more API keys, separated by commas / whitespace / newlines."""
+    seen, out = set(), []
+    for part in re.split(r"[\s,]+", raw or ""):
+        part = part.strip()
+        if part and part not in seen:
+            seen.add(part)
+            out.append(part)
+    return out
+
+
+# GEMINI_API_KEY may hold several keys (from different Google accounts) to
+# stretch the free-tier daily quota -- the app rotates and fails over on 429.
+API_KEYS = _split_keys(os.environ.get("GEMINI_API_KEY", ""))
+_key_cursor = 0
 # If set, the whole site is gated behind this password (HTTP Basic Auth).
 # Leave empty for local use; set it on the hosted deployment.
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
@@ -85,6 +101,16 @@ class ApiError(Exception):
         self.message = message
 
 
+def _key_order():
+    """API keys rotated so load spreads across them across requests."""
+    global _key_cursor
+    if not API_KEYS:
+        return []
+    start = _key_cursor % len(API_KEYS)
+    _key_cursor = start + 1
+    return API_KEYS[start:] + API_KEYS[:start]
+
+
 def call_gemini(transcript, image):
     parts = []
     if image is not None:
@@ -97,44 +123,62 @@ def call_gemini(transcript, image):
         parts.append({"inlineData": {"mimeType": media_type, "data": data}})
     parts.append({"text": transcript})
 
-    if not API_KEY:
+    if not API_KEYS:
         raise ApiError(
             401,
             "GEMINI_API_KEY is not set. Get a free key at "
             "https://aistudio.google.com/apikey and add it to your .env file, then restart.",
         )
 
-    payload = {
-        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {"temperature": 1, "maxOutputTokens": 20000},
-    }
+    payload = json.dumps(
+        {
+            "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+            "contents": [{"role": "user", "parts": parts}],
+            "generationConfig": {"temperature": 1, "maxOutputTokens": 20000},
+        }
+    ).encode("utf-8")
 
-    req = urllib.request.Request(
-        GEMINI_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        method="POST",
-        headers={"content-type": "application/json", "x-goog-api-key": API_KEY},
+    # Try each key in turn; a 429/5xx just means "move to the next key". After one
+    # full pass with every key throttled, wait briefly and make a second pass.
+    keys = _key_order()
+    last_http = None
+    for pass_i in range(2):
+        for key in keys:
+            req = urllib.request.Request(
+                GEMINI_URL,
+                data=payload,
+                method="POST",
+                headers={"content-type": "application/json", "x-goog-api-key": key},
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                return _extract_script(body)
+            except urllib.error.HTTPError as exc:
+                if exc.code in (429, 500, 502, 503, 529):
+                    last_http = exc
+                    continue
+                raise ApiError(exc.code, _describe_http_error(exc))
+            except urllib.error.URLError as exc:
+                raise ApiError(502, "Could not reach the Gemini API: %s" % exc.reason)
+            except json.JSONDecodeError:
+                raise ApiError(502, "The Gemini API returned an unreadable response.")
+        if pass_i == 0:
+            time.sleep(6)
+
+    if last_http is not None and last_http.code == 429:
+        raise ApiError(
+            429,
+            "Gemini's free tier is rate-limited on %s right now. Wait a minute, or "
+            "add another key to GEMINI_API_KEY." % ("every key" if len(keys) > 1 else "the key"),
+        )
+    raise ApiError(
+        last_http.code if last_http else 502,
+        _describe_http_error(last_http) if last_http else "Gemini did not respond.",
     )
 
-    # The free tier throttles (429) and the model sometimes reports itself
-    # overloaded (503) -- retry a few times with backoff before giving up.
-    attempts = 4
-    for i in range(attempts):
-        try:
-            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
-            break
-        except urllib.error.HTTPError as exc:
-            if exc.code in (429, 500, 502, 503, 529) and i < attempts - 1:
-                time.sleep(3 + 3 * i)  # 3s, 6s, 9s
-                continue
-            raise ApiError(exc.code, _describe_http_error(exc))
-        except urllib.error.URLError as exc:
-            raise ApiError(502, "Could not reach the Gemini API: %s" % exc.reason)
-        except json.JSONDecodeError:
-            raise ApiError(502, "The Gemini API returned an unreadable response.")
 
+def _extract_script(body):
     block = body.get("promptFeedback", {}).get("blockReason")
     if block:
         raise ApiError(422, "Gemini blocked this request (%s)." % block)
@@ -616,7 +660,7 @@ def _finish(result, link, transcript):
 
 
 def main():
-    if not API_KEY:
+    if not API_KEYS:
         sys.stderr.write(
             "\n[warn] GEMINI_API_KEY is not set. Get a free key at "
             "https://aistudio.google.com/apikey, copy .env.example to .env, and add it.\n\n"
@@ -625,7 +669,7 @@ def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     where = "http://localhost:%d" % PORT if HOST in ("127.0.0.1", "localhost") else "port %d" % PORT
     print("MCAT script generator running at %s" % where)
-    print("Model: %s" % MODEL)
+    print("Model: %s  (%d Gemini key%s)" % (MODEL, len(API_KEYS), "" if len(API_KEYS) == 1 else "s"))
     print("Password gate: %s" % ("ON" if APP_PASSWORD else "off"))
     print("Airtable: %s" % ("ON" if (AIRTABLE_API_KEY and AIRTABLE_BASE_ID and AIRTABLE_TABLE) else "off"))
     try:
