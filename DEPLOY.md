@@ -41,6 +41,9 @@ There are two accounts to make: **GitHub** (stores the code) and **Render** (run
      link" button on the hosted site. Note: TikTok often blocks downloads from
      Render's servers, so that button is most reliable when you run the app
      locally. Leave it blank to hide/disable the feature online.
+   - **AIRTABLE_API_KEY**, **AIRTABLE_BASE_ID**, **AIRTABLE_TABLE** — optional.
+     Set all three to log every generated script as a row in Airtable. Leave
+     blank to skip Airtable entirely.
 5. Click **Apply** / **Create**. First build takes 2–4 minutes.
 6. When it says **Live**, click the URL at the top. Your browser will pop up a
    login box: leave the username blank (or type anything) and enter the password.

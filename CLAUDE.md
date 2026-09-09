@@ -47,6 +47,7 @@ python3 server.py                   # serves http://localhost:3000, Ctrl+C to st
 | `ELEVENLABS_API_KEY` | Optional. Enables `POST /api/from-link`. Without it that route 501s |
 | `ELEVENLABS_MODEL` | Default `scribe_v1` |
 | `YTDLP_BIN` | Optional. Explicit path to a yt-dlp binary; else `./bin/yt-dlp` or PATH |
+| `AIRTABLE_API_KEY` / `AIRTABLE_BASE_ID` / `AIRTABLE_TABLE` | Optional; **all three** enable logging every script to Airtable. Token needs `data.records:write` (the app only writes, never reads) |
 | `APP_PASSWORD` | If set, the **entire site** is behind HTTP Basic Auth. Empty locally |
 | `HOST` | Default `127.0.0.1`. Render sets `0.0.0.0` |
 | `PORT` | Default `3000`. Render injects its own |
@@ -95,6 +96,17 @@ The prompt tells the model not to emit a "Short Video Script" title; `call_gemin
 *also* strips a leading one defensively with a regex. Two "signal phrases" from the
 prompt (`I NEED THE QUESTIONS AND ANSWER CHOICES`, `DO NOT ADD THIS TO THE DATABASE`)
 are detected in `app.js` and surfaced as a banner rather than blending into the script.
+
+### Airtable logging
+
+`_attach_airtable()` runs after every successful generation on both routes. It
+calls `save_to_airtable()` (one `POST .../v0/{base}/{table}` with `typecast: true`)
+mapping to hard-coded field names in the owner's "Main Database" table: `Video URL`,
+`Original Transcript`, `Body Script`, `Script Status`=`Done`, `Script Completed At`,
+`Video Type`=`Short Form`, and `Source Account` best-effort from the `@handle`
+(`_SOURCE_ACCOUNT_MAP`). Best-effort: a failure is attached to the JSON as
+`airtable: {ok, detail}` for a small UI note and never raises. If the destination
+table changes, update the field names in `save_to_airtable()`.
 
 ## Gemini model ids
 
