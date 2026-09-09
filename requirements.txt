@@ -1,4 +1,4 @@
 # yt-dlp downloads the video from a pasted link (e.g. TikTok) so it can be
 # transcribed. Everything else in this app uses only the standard library.
-# TikTok breaks older versions often -- keep this floor recent.
-yt-dlp>=2026.7.0
+# Unpinned on purpose: TikTok breaks older versions, so always take the latest.
+yt-dlp
