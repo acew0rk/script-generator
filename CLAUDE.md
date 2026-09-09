@@ -7,16 +7,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A single-purpose web app for turning MCAT short-video content into a narrator
 script. Two input paths:
 
-1. **Paste a transcript** → `POST /api/generate` → Gemini writes the script. Free.
-2. **Paste TikTok link(s)** → `POST /api/from-link` (one request per link) →
-   `yt-dlp` downloads the video → ElevenLabs `speech-to-text` transcribes it →
-   same Gemini step. The response includes the raw `transcript` for editing.
+1. **Paste TikTok link(s)** (primary) → `POST /api/from-link`, one request per
+   link → `yt-dlp` downloads the video → ElevenLabs `speech-to-text` transcribes
+   it → Gemini writes the script → the row is written to Airtable.
    **Batch is frontend-only**: `app.js` splits the textarea on whitespace and
-   loops the single-link endpoint sequentially (`MAX_BATCH` 20), rendering a
-   per-link progress list; the last success loads into the main panels. No
-   server-side batch endpoint.
+   loops the single-link endpoint sequentially (`MAX_BATCH` 20). No server-side
+   batch endpoint.
+2. **Paste a transcript** (fallback, collapsed `<details>`) → `POST /api/generate`
+   → Gemini → Airtable. For when a download fails or the transcript came from
+   elsewhere (transcript365).
 
-Runs locally for the owner and is also deployed publicly (password-gated) on Render.
+The generated transcript/script are **not displayed** — the on-page output is a
+results list where each row links to the new Airtable record. Review happens in
+Airtable. Runs locally for the owner and is also deployed publicly
+(password-gated) on Render.
 
 ## Running it
 
@@ -64,14 +68,14 @@ committed file. `.env` is gitignored; `.env.example` is the template.
 
 Three moving parts, each in one file:
 
-- **`server.py`** — a `ThreadingHTTPServer` with one `Handler`. It does two jobs:
-  1. Serves static files from `public/` (path-traversal guarded).
-  2. `POST /api/generate` — validates `{transcript, image?}`, calls
-     `call_gemini()`, returns `{script, model, truncated}`.
+- **`server.py`** — a `ThreadingHTTPServer` with one `Handler`. Routes: static
+  files from `public/` (path-traversal guarded), `POST /api/from-link`
+  (`{link}` → `transcribe_link()` → `call_gemini()` → `_finish()`), and
+  `POST /api/generate` (`{transcript, image?}` → `call_gemini()` → `_finish()`).
   `call_gemini()` builds the Gemini `v1beta/models/{MODEL}:generateContent` REST
-  payload by hand and sends it with `urllib.request` (`x-goog-api-key` header).
-  The frontend's image shape `{media_type, data}` is translated here into
-  Gemini's `inlineData: {mimeType, data}`. All error paths raise `ApiError(status,
+  payload by hand and sends it with `urllib.request` (`x-goog-api-key` header);
+  it still accepts an `image` (`{media_type, data}` → Gemini `inlineData`) even
+  though the current UI never sends one. All error paths raise `ApiError(status,
   message)` which becomes the JSON `{error}` the UI shows.
   `transcribe_link()` = `_download_media()` (yt-dlp — binary via `subprocess` if
   found, else the module — into a temp dir that is always cleaned up) + a
@@ -107,7 +111,10 @@ backstop — it only fires when the text actually contains markup and converts t
 common tokens (`\times`, `^{-9}`, `$...$`, …) to spoken words, leaving plain "$5"
 money alone.
 
-`call_gemini()` retries 429/5xx up to 4 times (3s/6s/9s) — the free tier throttles.
+`call_gemini()` retries 429/5xx up to 4 times (3s/6s/9s) — the free tier throttles
+per-minute *and* per-day. Once the daily quota is spent, retries can't help and
+every generation fails until it resets (~midnight Pacific). There is no paid
+billing or multi-provider fallback wired up.
 
 ### `_finish()` — signal phrases + Airtable
 
@@ -137,9 +144,10 @@ already happened once: `gemini-2.5-flash` → `gemini-3.6-flash`.
 - Render reads `render.yaml` (a Blueprint): `plan: free`,
   `buildCommand: pip install -r requirements.txt` (required — a blueprint deploy
   runs no build step without it, so `yt-dlp` silently won't install),
-  `healthCheckPath: /healthz`. The three secrets (`GEMINI_API_KEY`,
-  `APP_PASSWORD`, `ELEVENLABS_API_KEY`) are `sync: false` and entered in the
-  Render dashboard, not committed.
+  `healthCheckPath: /healthz`. `HOST` and `GEMINI_MODEL` have literal values; the
+  rest (`GEMINI_API_KEY`, `APP_PASSWORD`, `ELEVENLABS_API_KEY`,
+  `AIRTABLE_API_KEY`, `AIRTABLE_BASE_ID`, `AIRTABLE_TABLE`) are `sync: false` —
+  entered in the Render dashboard, not committed.
 - **Push to `main` → Render auto-redeploys.** Changes to `render.yaml` itself
   (e.g. `buildCommand`) may need a **Manual sync** on the Render Blueprint page
   before they take effect.
