@@ -126,6 +126,23 @@ Never end with only the answer or only the letter.
 
 - Do not add meta-commentary before or after the script.
 
+11. NO MATH NOTATION -- THE SCRIPT IS READ ALOUD
+
+This applies to the ENTIRE output, including the question.
+
+- Never use LaTeX, dollar signs, backslash commands (\times, \text, \frac, \cdot, \log, etc.), carets (^), underscores for subscripts, or any symbolic math.
+
+- Write every number, unit, variable, exponent, and operation as plain spoken words.
+
+- Examples of what to write instead:
+  - "one times ten to the negative nine watts per meter squared" -- NOT "$1 \times 10^{-9} \text{ W/m}^2$"
+  - "ten to the negative twelfth power" -- NOT "10^-12" or "$10^{-12}$"
+  - "the base-ten logarithm of the intensity" -- NOT "log(I)"
+  - "meters per second squared" -- NOT "m/s^2"
+  - "sodium" or "Na plus" -- NOT "Na^+"
+
+- Equations are spelled out word for word, exactly as instructed in rule 8. If the transcript shows a formula symbolically, convert it to spoken words.
+
 OUTPUT FORMAT:
 
 Do not add any title, heading, or label such as "Short Video Script" at the top. Begin the output directly with the MCAT question.

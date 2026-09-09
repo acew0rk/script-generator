@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -116,15 +117,23 @@ def call_gemini(transcript, image):
         headers={"content-type": "application/json", "x-goog-api-key": API_KEY},
     )
 
-    try:
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        raise ApiError(exc.code, _describe_http_error(exc))
-    except urllib.error.URLError as exc:
-        raise ApiError(502, "Could not reach the Gemini API: %s" % exc.reason)
-    except json.JSONDecodeError:
-        raise ApiError(502, "The Gemini API returned an unreadable response.")
+    # The free tier throttles (429) and the model sometimes reports itself
+    # overloaded (503) -- retry a few times with backoff before giving up.
+    attempts = 4
+    for i in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code in (429, 500, 502, 503, 529) and i < attempts - 1:
+                time.sleep(3 + 3 * i)  # 3s, 6s, 9s
+                continue
+            raise ApiError(exc.code, _describe_http_error(exc))
+        except urllib.error.URLError as exc:
+            raise ApiError(502, "Could not reach the Gemini API: %s" % exc.reason)
+        except json.JSONDecodeError:
+            raise ApiError(502, "The Gemini API returned an unreadable response.")
 
     block = body.get("promptFeedback", {}).get("blockReason")
     if block:
@@ -149,12 +158,55 @@ def call_gemini(transcript, image):
         flags=re.IGNORECASE,
     ).strip()
 
+    # Defensive: the script is read aloud, so scrub any LaTeX / math notation the
+    # model emitted despite the prompt.
+    script = _strip_latex(script)
+
     if not script:
         if finish and finish != "STOP":
             raise ApiError(422, "Gemini stopped early (%s) with no usable text." % finish)
         raise ApiError(502, "Gemini returned an empty response. Try again.")
 
     return {"script": script, "model": MODEL, "truncated": finish == "MAX_TOKENS"}
+
+
+# Fires on LaTeX commands, braced super/subscripts, or a $...$ span that
+# actually contains a math character (so plain "$5 ... $2" money is left alone).
+_LATEX_HINT = re.compile(r"\\[a-zA-Z]+|[\^_]\{|\$[^$\n]*[\\^_{}][^$\n]*\$")
+
+
+def _strip_latex(text):
+    """Backstop for a read-aloud script: turn stray LaTeX into plain words.
+    Only runs when the text actually looks like it contains math markup."""
+    if not _LATEX_HINT.search(text):
+        return text
+    t = text
+    t = re.sub(r"\\text\s*\{([^{}]*)\}", r"\1", t)
+    t = re.sub(r"\\mathrm\s*\{([^{}]*)\}", r"\1", t)
+    t = re.sub(r"\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}", r"\1 divided by \2", t)
+    for cmd, word in (
+        (r"\times", " times "), (r"\cdot", " times "), (r"\div", " divided by "),
+        (r"\pm", " plus or minus "), (r"\approx", " approximately "),
+        (r"\leq", " less than or equal to "), (r"\geq", " greater than or equal to "),
+        (r"\rightarrow", " to "), (r"\to", " to "), (r"\Delta", "delta "),
+        (r"\left", ""), (r"\right", ""), (r"\,", " "), (r"\;", " "), (r"\!", ""),
+    ):
+        t = t.replace(cmd, word)
+    # exponents: negatives first, then squared/cubed, then generic
+    t = re.sub(r"\^\s*\{?\s*-\s*([0-9]+)\s*\}?", r" to the negative \1", t)
+    t = re.sub(r"\^\s*\{?\s*2\s*\}?", " squared", t)
+    t = re.sub(r"\^\s*\{?\s*3\s*\}?", " cubed", t)
+    t = re.sub(r"\^\s*\{?\s*([0-9]+)\s*\}?", r" to the power \1", t)
+    # subscripts
+    t = re.sub(r"_\{([^{}]*)\}", r" \1", t)
+    t = re.sub(r"_([0-9A-Za-z])", r" \1", t)
+    # leftover math scaffolding
+    t = t.replace("$", "")
+    t = re.sub(r"\\[()\[\]]", "", t)
+    t = re.sub(r"[{}]", "", t)
+    t = re.sub(r"[ \t]{2,}", " ", t)
+    t = re.sub(r" +([.,;:])", r"\1", t)
+    return t.strip()
 
 
 def _describe_http_error(exc):
@@ -167,7 +219,9 @@ def _describe_http_error(exc):
     if exc.code in (400, 403) and ("API key" in detail or "API_KEY" in detail):
         return "Gemini rejected the API key. Check GEMINI_API_KEY in your .env file."
     if exc.code == 429:
-        return "Hit Gemini's free-tier rate limit. Wait a minute and try again."
+        return "Gemini's free tier is rate-limited right now (it retried a few times). Wait a minute and try again."
+    if exc.code in (500, 502, 503, 529):
+        return "Gemini is overloaded right now (it retried a few times). Try again in a moment."
     if detail:
         return "Gemini API error (%s): %s" % (exc.code, detail)
     return "Gemini API error (%s)." % exc.code

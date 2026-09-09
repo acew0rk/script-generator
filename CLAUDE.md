@@ -93,9 +93,15 @@ blank username + the password. There are no sessions or cookies.
 ### Output post-processing
 
 The prompt tells the model not to emit a "Short Video Script" title; `call_gemini()`
-*also* strips a leading one defensively with a regex. Two "signal phrases" from the
-prompt (`I NEED THE QUESTIONS AND ANSWER CHOICES`, `DO NOT ADD THIS TO THE DATABASE`)
-are detected in `app.js` and surfaced as a banner rather than blending into the script.
+*also* strips a leading one defensively with a regex. The prompt (rule 11) forbids
+LaTeX / math notation because the script is read aloud; `_strip_latex()` is the
+backstop — it only fires when the text actually contains markup and converts the
+common tokens (`\times`, `^{-9}`, `$...$`, …) to spoken words, leaving plain "$5"
+money alone. Two "signal phrases" from the prompt (`I NEED THE QUESTIONS AND
+ANSWER CHOICES`, `DO NOT ADD THIS TO THE DATABASE`) are detected in `app.js` and
+surfaced as a banner rather than blending into the script.
+
+`call_gemini()` retries 429/5xx up to 4 times (3s/6s/9s) — the free tier throttles.
 
 ### Airtable logging
 
