@@ -55,7 +55,7 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 from system_prompt import SYSTEM_PROMPT  # noqa: E402  (after load_dotenv on purpose)
 
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
 PORT = int(os.environ.get("PORT", "3000"))
 HOST = os.environ.get("HOST", "127.0.0.1")
 

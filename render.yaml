@@ -13,7 +13,7 @@ services:
       - key: HOST
         value: 0.0.0.0
       - key: GEMINI_MODEL
-        value: gemini-3.6-flash
+        value: gemini-flash-lite-latest
       - key: GEMINI_API_KEY
         sync: false   # you paste this in the Render dashboard
       - key: APP_PASSWORD

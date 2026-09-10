@@ -53,7 +53,7 @@ python3 server.py                   # serves http://localhost:3000, Ctrl+C to st
 | Var | Purpose |
 |---|---|
 | `GEMINI_API_KEY` | Required. Free key(s) from https://aistudio.google.com/apikey — **comma-separated for several** (different Google accounts); `call_gemini()` rotates and fails over on 429 |
-| `GEMINI_MODEL` | Default `gemini-3.6-flash`. Google retires old model ids — see below |
+| `GEMINI_MODEL` | Default `gemini-flash-lite-latest` (lite = bigger free daily allowance; `-latest` alias self-updates). `gemini-flash-latest` for heavier output. See model-id notes below |
 | `ELEVENLABS_API_KEY` | Optional. Enables `POST /api/from-link`. Without it that route 501s |
 | `ELEVENLABS_MODEL` | Default `scribe_v1` |
 | `YTDLP_BIN` | Optional. Explicit path to a yt-dlp binary; else `./bin/yt-dlp` or PATH |
@@ -137,10 +137,13 @@ destination or the field values, edit `save_to_airtable()`.
 
 ## Gemini model ids
 
-Google removes old model ids for new projects. If generation starts returning a
-`404 ... "no longer available"`, the error body names the current replacement —
-update `GEMINI_MODEL` in `.env` (and the default in `server.py`) to that id. This
-already happened once: `gemini-2.5-flash` → `gemini-3.6-flash`.
+Google removes old *pinned* model ids for new projects (`gemini-2.5-flash` and
+`gemini-2.5-flash-lite` both 404 with "no longer available" now). The **`-latest`
+aliases** (`gemini-flash-lite-latest`, `gemini-flash-latest`) dodge this — they
+follow Google's current model. Free-tier request-per-day quota is much larger on
+`*-flash-lite` than on the full `*-flash`, which is why the default is the lite
+alias. `GET /v1beta/models` (with a key header) lists what a project can actually
+call. If a pinned id ever 404s, the error body names its replacement.
 
 ## Deployment
 
