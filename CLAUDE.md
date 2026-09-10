@@ -73,7 +73,9 @@ Three moving parts, each in one file:
 - **`server.py`** — a `ThreadingHTTPServer` with one `Handler`. Routes: static
   files from `public/` (path-traversal guarded), `POST /api/from-link`
   (`{link}` → `transcribe_link()` → `call_gemini()` → `_finish()`), and
-  `POST /api/generate` (`{transcript, image?}` → `call_gemini()` → `_finish()`).
+  `POST /api/generate` (`{transcript, image?, link?}` → `call_gemini()` →
+  `_finish()`; `link` is optional and only used so a fixed flagged video keeps
+  its Video URL / Source Account).
   `call_gemini()` builds the Gemini `v1beta/models/{MODEL}:generateContent` REST
   payload by hand and sends it with `urllib.request` (`x-goog-api-key` header);
   it still accepts an `image` (`{media_type, data}` → Gemini `inlineData`) even
@@ -95,8 +97,12 @@ Three moving parts, each in one file:
   **not shown on the page** — they live in Airtable. A collapsed `<details>` holds
   a paste-a-transcript fallback (`/api/generate`) for when a download fails.
   The sidebar is a **client-side log** in `localStorage` (`mcat-scripts-history`):
-  title + status, click-through to Airtable when a row was saved. It keeps the
-  full script/transcript as a local backup but never displays them.
+  title + status. A saved row click-throughs to Airtable; a **flagged** row
+  (`signal` set) opens the **fix panel** — pre-fills the transcript, takes a typed
+  question + answer choices (or a pasted/attached screenshot), and re-runs via
+  `/api/generate` with the original `link`; on success it patches the history
+  entry in place (`signal` cleared, `airtableUrl` set). Full script/transcript are
+  kept as a local backup but never displayed.
 
 ### Auth model
 
