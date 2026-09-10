@@ -596,6 +596,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "Invalid image payload."})
             return
 
+        link = data.get("link")
+        link = link.strip() if isinstance(link, str) and link.strip() else None
+
         transcript = transcript.strip()
         try:
             result = call_gemini(transcript, image)
@@ -603,7 +606,7 @@ class Handler(BaseHTTPRequestHandler):
             self._fail(exc)
             return
 
-        _finish(result, None, transcript)
+        _finish(result, link, transcript)
         self._send_json(200, result)
 
     def _handle_from_link(self):

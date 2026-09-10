@@ -47,6 +47,41 @@
           <ul id="batch-progress" class="batch-progress" hidden></ul>
         </section>
 
+        <section class="panel" id="fix-panel" hidden>
+          <div class="output-head tight">
+            <label class="field-label">Fix a flagged video</label>
+            <button id="fix-close" type="button">Close</button>
+          </div>
+          <p class="hint" id="fix-link"></p>
+
+          <label class="field-label" for="fix-qa">Question + all answer choices</label>
+          <textarea
+            id="fix-qa"
+            class="link-input"
+            rows="4"
+            placeholder="Type or paste the full question and every answer choice (A, B, C, D, …)"
+            spellcheck="false"
+          ></textarea>
+          <div id="fix-dropzone" class="dropzone" tabindex="0">
+            <input id="fix-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+            <span id="fix-dropzone-text">…or attach / paste a screenshot of the question &amp; answer choices</span>
+            <div id="fix-image-preview" class="image-preview" hidden>
+              <img id="fix-image-thumb" alt="screenshot preview" />
+              <button id="fix-image-remove" type="button">Remove</button>
+            </div>
+          </div>
+
+          <details class="fix-transcript-wrap">
+            <summary>Transcript (edit if a term was misheard)</summary>
+            <textarea id="fix-transcript" class="link-input" rows="6" spellcheck="false"></textarea>
+          </details>
+
+          <div class="link-row">
+            <button id="fix-btn" type="button" class="primary">Regenerate</button>
+            <span id="fix-status" class="status" role="status" aria-live="polite"></span>
+          </div>
+        </section>
+
         <details class="panel fallback">
           <summary>A download failed? Paste that transcript instead</summary>
           <div class="fallback-body">

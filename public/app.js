@@ -15,7 +15,23 @@ const els = {
   newBtn: document.getElementById("new-btn"),
   historyList: document.getElementById("history-list"),
   historyEmpty: document.getElementById("history-empty"),
+  fixPanel: document.getElementById("fix-panel"),
+  fixClose: document.getElementById("fix-close"),
+  fixLink: document.getElementById("fix-link"),
+  fixQa: document.getElementById("fix-qa"),
+  fixTranscript: document.getElementById("fix-transcript"),
+  fixBtn: document.getElementById("fix-btn"),
+  fixStatus: document.getElementById("fix-status"),
+  fixDropzone: document.getElementById("fix-dropzone"),
+  fixDropzoneText: document.getElementById("fix-dropzone-text"),
+  fixImageInput: document.getElementById("fix-image-input"),
+  fixImagePreview: document.getElementById("fix-image-preview"),
+  fixImageThumb: document.getElementById("fix-image-thumb"),
+  fixImageRemove: document.getElementById("fix-image-remove"),
 };
+
+let fixingId = null; // history entry id currently open in the fix panel
+let fixImage = null; // { media_type, data }
 
 /* ---------- helpers ---------- */
 
@@ -265,6 +281,143 @@ function deleteHistory(id) {
   renderHistory();
 }
 
+function updateHistoryItem(id, patch) {
+  const items = loadHistory().map((it) => (it.id === id ? { ...it, ...patch } : it));
+  persistHistory(items);
+  renderHistory();
+}
+
+/* ---------- fix panel (re-run a flagged video with the question added) ---------- */
+
+function readFixImage(file) {
+  if (!file || !file.type.startsWith("image/")) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = String(reader.result);
+    fixImage = {
+      media_type: file.type === "image/jpg" ? "image/jpeg" : file.type,
+      data: result.slice(result.indexOf(",") + 1),
+    };
+    els.fixImageThumb.src = result;
+    els.fixImagePreview.hidden = false;
+    els.fixDropzoneText.hidden = true;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearFixImage() {
+  fixImage = null;
+  els.fixImageInput.value = "";
+  els.fixImageThumb.removeAttribute("src");
+  els.fixImagePreview.hidden = true;
+  els.fixDropzoneText.hidden = false;
+}
+
+function openFix(item) {
+  fixingId = item.id;
+  clearFixImage();
+  els.fixLink.textContent = item.source || "(no link — pasted transcript)";
+  els.fixQa.value = "";
+  els.fixTranscript.value = item.transcript || "";
+  els.fixStatus.textContent = item.signal ? item.signal : "";
+  els.fixPanel.hidden = false;
+  els.fixPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  els.fixQa.focus();
+}
+
+async function submitFix() {
+  const item = loadHistory().find((it) => it.id === fixingId);
+  if (!item) {
+    els.fixPanel.hidden = true;
+    return;
+  }
+  const qa = els.fixQa.value.trim();
+  const transcript = els.fixTranscript.value.trim();
+  if (!qa && !fixImage) {
+    els.fixStatus.textContent = "Add the question + answer choices (text or screenshot) first.";
+    els.fixQa.focus();
+    return;
+  }
+
+  const combined = qa
+    ? transcript + "\n\n---\nQuestion and answer choices:\n" + qa
+    : transcript;
+
+  els.fixBtn.disabled = true;
+  els.fixStatus.textContent = "Regenerating…";
+
+  try {
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcript: combined,
+        image: fixImage || undefined,
+        link: item.source || undefined,
+      }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      els.fixStatus.textContent = data.error || `Failed (${res.status}).`;
+      return;
+    }
+    if (data.signal) {
+      els.fixStatus.textContent =
+        data.signal + " — the question/choices still aren't clear. Add more detail or a screenshot.";
+      return;
+    }
+
+    const url = data.airtable && data.airtable.ok ? data.airtable.url || "" : "";
+    updateHistoryItem(item.id, {
+      script: data.script || item.script,
+      transcript: combined,
+      airtableUrl: url,
+      signal: "",
+    });
+    els.fixStatus.textContent = url ? "✓ Fixed — added to Airtable." : "✓ Regenerated.";
+    setTimeout(() => {
+      if (fixingId === item.id) els.fixPanel.hidden = true;
+    }, 1500);
+  } catch {
+    els.fixStatus.textContent = "Could not reach the server.";
+  } finally {
+    els.fixBtn.disabled = false;
+  }
+}
+
+els.fixBtn.addEventListener("click", submitFix);
+els.fixClose.addEventListener("click", () => {
+  els.fixPanel.hidden = true;
+  fixingId = null;
+});
+els.fixDropzone.addEventListener("click", (e) => {
+  if (e.target === els.fixImageRemove) return;
+  els.fixImageInput.click();
+});
+els.fixImageInput.addEventListener("change", () => readFixImage(els.fixImageInput.files[0]));
+els.fixImageRemove.addEventListener("click", (e) => {
+  e.stopPropagation();
+  clearFixImage();
+});
+els.fixDropzone.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  els.fixDropzone.classList.add("dragover");
+});
+els.fixDropzone.addEventListener("dragleave", () => els.fixDropzone.classList.remove("dragover"));
+els.fixDropzone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  els.fixDropzone.classList.remove("dragover");
+  if (e.dataTransfer.files.length) readFixImage(e.dataTransfer.files[0]);
+});
+els.fixQa.addEventListener("paste", (e) => {
+  const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
+  if (item) {
+    e.preventDefault();
+    readFixImage(item.getAsFile());
+  }
+});
+
 function renderHistory() {
   const items = loadHistory();
   els.historyEmpty.hidden = items.length > 0;
@@ -302,7 +455,11 @@ function renderHistory() {
       (item.signal ? "flagged" : item.airtableUrl ? "in Airtable" : "local only");
 
     li.append(del, titleEl, metaEl);
-    if (item.airtableUrl) {
+    if (item.signal) {
+      li.classList.add("linked", "flagged");
+      li.title = "Add the question + answer choices and regenerate";
+      li.addEventListener("click", () => openFix(item));
+    } else if (item.airtableUrl) {
       li.classList.add("linked");
       li.title = "Open in Airtable";
       li.addEventListener("click", () => window.open(item.airtableUrl, "_blank", "noopener"));
@@ -326,6 +483,8 @@ els.newBtn.addEventListener("click", () => {
   els.status.textContent = "";
   els.results.innerHTML = "";
   els.results.hidden = true;
+  els.fixPanel.hidden = true;
+  fixingId = null;
   els.link.focus();
 });
 

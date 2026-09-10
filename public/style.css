@@ -96,6 +96,15 @@ body {
   background: #eef3fe;
 }
 
+.history-item.flagged .meta {
+  color: var(--warn-text);
+  font-weight: 600;
+}
+
+.history-item.flagged:hover {
+  background: var(--warn-bg);
+}
+
 .history-item .title {
   font-size: 13px;
   font-weight: 550;
@@ -271,6 +280,39 @@ body {
 
 .batch-state a {
   color: inherit;
+}
+
+/* Fix panel */
+#fix-panel .field-label {
+  margin-top: 14px;
+}
+
+#fix-panel .output-head .field-label {
+  margin-top: 0;
+}
+
+#fix-panel .dropzone {
+  margin-top: 8px;
+}
+
+.fix-transcript-wrap {
+  margin-top: 14px;
+}
+
+.fix-transcript-wrap > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+#fix-close {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 /* Fallback (paste a transcript) */
