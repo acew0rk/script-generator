@@ -77,10 +77,11 @@ Three moving parts, each in one file:
   `_finish()`; `link` is optional and only used so a fixed flagged video keeps
   its Video URL / Source Account).
   `call_gemini()` builds the Gemini `v1beta/models/{MODEL}:generateContent` REST
-  payload by hand and sends it with `urllib.request` (`x-goog-api-key` header);
-  it still accepts an `image` (`{media_type, data}` → Gemini `inlineData`) even
-  though the current UI never sends one. All error paths raise `ApiError(status,
-  message)` which becomes the JSON `{error}` the UI shows.
+  payload by hand and sends it with `urllib.request` (`x-goog-api-key` header).
+  It accepts an optional `image` (`{media_type, data}` → Gemini `inlineData`) —
+  the fix panel sends one when the user attaches a screenshot of the question.
+  All error paths raise `ApiError(status, message)` which becomes the JSON
+  `{error}` the UI shows.
   `transcribe_link()` = `_download_media()` (yt-dlp — binary via `subprocess` if
   found, else the module — into a temp dir that is always cleaned up) + a
   hand-built `multipart/form-data` POST to ElevenLabs (`_multipart()` — there is
@@ -121,10 +122,11 @@ money alone.
 
 On 429/5xx `call_gemini()` moves to the next key in `GEMINI_API_KEY` (rotated per
 request by `_key_order()`); after a full pass with every key throttled it waits 6s
-and makes one more pass, then raises. This stretches the free tier — but the
-quota is per-Google-account per-day, so once *all* the keys' daily quotas are
-spent, nothing works until reset (~midnight Pacific). No paid billing or
-non-Gemini fallback is wired up. Response parsing lives in `_extract_script()`.
+and makes one more pass, then raises. The wall hit in practice is the **per-minute**
+rate limit — it clears on its own within a minute, and rotating several keys means
+a sequential batch (naturally ~2–3/min) rarely touches it. Daily quota is real but
+large on the `-flash-lite` model. No paid billing or non-Gemini fallback is wired
+up; adding keys is the lever. Response parsing lives in `_extract_script()`.
 
 ### `_finish()` — signal phrases + Airtable
 
